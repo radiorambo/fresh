@@ -732,9 +732,8 @@ impl SplitRenderer {
         // Track cursor position during rendering (eliminates duplicate line iteration)
         let mut cursor_screen_x = 0u16;
         let mut cursor_screen_y = 0u16;
-        let mut source_to_screen: HashMap<usize, (u16, u16)> = HashMap::new();
         let mut have_cursor = false;
-        let mut last_seen_screen: Option<(u16, u16, usize)> = None;
+        let mut last_line_end: Option<(u16, u16)> = None;
 
         loop {
             let (line_view_offset, line_content, line_has_newline) =
@@ -767,6 +766,7 @@ impl SplitRenderer {
             // Build line with selection highlighting
             let mut line_spans = Vec::new();
             let mut line_view_map: Vec<Option<usize>> = Vec::new();
+            let mut last_visible_x: u16 = 0;
 
             // Render left margin (indicators + line numbers + separator)
             if state.margins.left_config.enabled {
@@ -830,7 +830,7 @@ impl SplitRenderer {
             let mut char_index = 0;
             let mut col_offset = 0usize;
             let mut last_seg_y: Option<u16> = None;
-            let mut last_seg_width: usize = 0;
+            let mut _last_seg_width: usize = 0;
 
             // Debug: Log first line rendering with cursor info
             if lines_rendered == 0 && !cursor_positions.is_empty() {
@@ -896,7 +896,9 @@ impl SplitRenderer {
                 // Skip characters before left_column
                 if col_offset >= left_col as usize {
                     // Check if this character is at a cursor position
-                    let is_cursor = cursor_positions.contains(&view_idx);
+                    let is_cursor = byte_pos
+                        .map(|bp| bp < state.buffer.len() && cursor_positions.contains(&bp))
+                        .unwrap_or(false);
 
                     // Debug: Log when we find a cursor position
                     if is_cursor && is_active {
@@ -1304,7 +1306,7 @@ impl SplitRenderer {
                     // (see the loop at line ~462 that skips chars before left_col)
                     // So we don't need to skip again here - just use the segment text as-is
                     let segment_text = segment.text.clone();
-                    last_seg_width = segment_text.chars().count();
+                    _last_seg_width = segment_text.chars().count();
 
                     // Apply styles to segment (preserving syntax highlighting, selection, overlays, etc.)
                     let styled_spans = Self::apply_styles_to_segment(
@@ -1322,23 +1324,21 @@ impl SplitRenderer {
                         if ch == '\n' {
                             continue;
                         }
-                        if let Some(Some(view_idx)) =
+                        if let Some(Some(src)) =
                             content_view_map.get(segment.start_char_offset + i)
                         {
                             let screen_x = i as u16;
-                            let src_opt = view_mapping
-                                .get(*view_idx)
-                                .copied()
-                                .flatten();
-                            if let Some(src) = src_opt {
-                                // latest wins; monotonic render order preserves the last on-screen position
-                                source_to_screen.insert(src, (screen_x, current_y));
-                                last_seen_screen = Some((screen_x, current_y, src));
-                                if src == state.cursors.primary().position {
-                                    cursor_screen_x = screen_x;
-                                    cursor_screen_y = current_y;
-                                    have_cursor = true;
-                                }
+                            last_visible_x = screen_x;
+                            if *src == state.cursors.primary().position {
+                                cursor_screen_x = screen_x;
+                                cursor_screen_y = current_y;
+                                have_cursor = true;
+                                tracing::trace!(
+                                    "Primary cursor byte {} mapped inline at ({}, {})",
+                                    src,
+                                    screen_x,
+                                    current_y
+                                );
                             }
                         }
                     }
@@ -1366,14 +1366,15 @@ impl SplitRenderer {
 
             // Map newline/caret positions to end-of-line screen coord
             if let Some(y) = last_seg_y {
-                let end_x = last_seg_width as u16;
+                let end_x = last_visible_x.saturating_add(1);
                 let view_end_idx = line_view_offset + line_content.chars().count();
+
+                last_line_end = Some((end_x, y));
 
                 // Map newline byte to end-of-line position
                 if line_has_newline && line_content.chars().count() > 0 {
                     let newline_idx = view_end_idx.saturating_sub(1);
                     if let Some(Some(src_newline)) = view_mapping.get(newline_idx) {
-                        source_to_screen.insert(*src_newline, (end_x, y));
                         if *src_newline == state.cursors.primary().position {
                             cursor_screen_x = end_x;
                             cursor_screen_y = y;
@@ -1384,13 +1385,8 @@ impl SplitRenderer {
             }
         }
 
-        // Handle cursor positioned after the last line (e.g., after pressing Enter at end of file)
-        // The loop above only iterates over existing lines, but if cursor is at the very end
-        // of the buffer after a newline, it represents a new empty line that needs to be rendered
-        // with its margin/gutter
-        if primary_cursor_position == state.buffer.len()
-        {
-            // Check if buffer ends with newline (creating an implicit empty last line)
+        // Handle cursor positioned at the end of the buffer
+        if !have_cursor && primary_cursor_position == state.buffer.len() {
             let buffer_ends_with_newline = if state.buffer.len() > 0 {
                 let last_char = state.get_text_range(state.buffer.len() - 1, state.buffer.len());
                 last_char == "\n"
@@ -1398,70 +1394,29 @@ impl SplitRenderer {
                 false
             };
 
-            // If buffer ends with newline and we haven't filled viewport, render the empty last line
-            if buffer_ends_with_newline && lines_rendered < visible_count {
-                let current_line_num = starting_line_num + lines_rendered;
-
-                let mut line_spans = Vec::new();
-
-                // Render left margin for the empty last line
-                if state.margins.left_config.enabled {
-                    // First column: render indicator or space
-                    // Check for diagnostic indicator on this line (computed dynamically from overlays)
-                    if diagnostic_lines.contains(&current_line_num) {
-                        line_spans.push(Span::styled(
-                            "●".to_string(),
-                            Style::default().fg(ratatui::style::Color::Red),
-                        ));
-                    } else {
-                        line_spans.push(Span::raw(" "));
-                    }
-
-                    // Render line number
-                    let margin_content = state.margins.render_line(
-                        current_line_num,
-                        crate::margin::MarginPosition::Left,
-                        estimated_lines,
-                    );
-                    let (rendered_text, style_opt) =
-                        margin_content.render(state.margins.left_config.width);
-
-                    let margin_style =
-                        style_opt.unwrap_or_else(|| Style::default().fg(theme.line_number_fg));
-
-                    line_spans.push(Span::styled(rendered_text, margin_style));
-
-                    // Render separator
-                    if state.margins.left_config.show_separator {
-                        let separator_style = Style::default().fg(theme.line_number_fg);
-                        line_spans.push(Span::styled(
-                            state.margins.left_config.separator.clone(),
-                            separator_style,
-                        ));
-                    }
-                }
-
-                // Add the empty line to the paragraph
-                lines.push(Line::from(line_spans));
-                lines_rendered += 1;
-            }
-
-            // Cursor is at the end of the buffer - place it on the current line
-            // cursor_screen_x is the column in the text content (NOT including gutter)
-            // The gutter offset is added later when setting the hardware cursor
-            cursor_screen_x = 0;
-            cursor_screen_y = if lines_rendered > 0 {
-                (lines_rendered - 1) as u16
-            } else {
-                0
-            };
-        }
-
-        if !have_cursor {
-            if let Some((lx, ly, _)) = last_seen_screen {
-                cursor_screen_x = lx;
-                cursor_screen_y = ly;
+            if buffer_ends_with_newline {
+                // Place cursor at start of the implicit empty last line (after newline)
+                cursor_screen_x = 0;
+                cursor_screen_y = lines_rendered.saturating_sub(1) as u16;
+                tracing::trace!(
+                    "EOF cursor (newline-terminated) at ({}, {})",
+                    cursor_screen_x,
+                    cursor_screen_y
+                );
                 have_cursor = true;
+            } else if let Some((x, y)) = last_line_end {
+                // Place cursor just after last visible character of final line
+                cursor_screen_x = x.saturating_add(0); // end_x already one past last char
+                cursor_screen_y = y;
+                tracing::trace!(
+                    "EOF cursor (no newline) at ({}, {}), last_line_end {:?}",
+                    cursor_screen_x,
+                    cursor_screen_y,
+                    last_line_end
+                );
+                have_cursor = true;
+            } else {
+                tracing::trace!("EOF cursor (no newline) missing last_line_end");
             }
         }
 
