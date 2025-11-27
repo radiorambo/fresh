@@ -127,6 +127,8 @@ struct UiColors {
     scrollbar_track_hover_fg: ColorDef,
     #[serde(default = "default_scrollbar_thumb_hover_fg")]
     scrollbar_thumb_hover_fg: ColorDef,
+    #[serde(default = "default_compose_margin_bg")]
+    compose_margin_bg: ColorDef,
 }
 
 // Default menu colors (for backward compatibility with existing themes)
@@ -180,6 +182,9 @@ fn default_scrollbar_track_hover_fg() -> ColorDef {
 }
 fn default_scrollbar_thumb_hover_fg() -> ColorDef {
     ColorDef::Named("White".to_string())
+}
+fn default_compose_margin_bg() -> ColorDef {
+    ColorDef::Rgb(18, 18, 18) // Darker than editor_bg for "desk" effect
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +287,9 @@ pub struct Theme {
     pub scrollbar_track_hover_fg: Color,
     pub scrollbar_thumb_hover_fg: Color,
 
+    // Compose mode colors
+    pub compose_margin_bg: Color,
+
     // Search colors
     pub search_match_bg: Color,
     pub search_match_fg: Color,
@@ -360,6 +368,7 @@ impl From<ThemeFile> for Theme {
             scrollbar_thumb_fg: file.ui.scrollbar_thumb_fg.into(),
             scrollbar_track_hover_fg: file.ui.scrollbar_track_hover_fg.into(),
             scrollbar_thumb_hover_fg: file.ui.scrollbar_thumb_hover_fg.into(),
+            compose_margin_bg: file.ui.compose_margin_bg.into(),
             search_match_bg: file.search.match_bg.into(),
             search_match_fg: file.search.match_fg.into(),
             diagnostic_error_fg: file.diagnostic.error_fg.into(),
@@ -479,6 +488,9 @@ impl Theme {
             scrollbar_track_hover_fg: Color::Gray,
             scrollbar_thumb_hover_fg: Color::White,
 
+            // Compose mode colors
+            compose_margin_bg: Color::Rgb(18, 18, 18), // Darker than editor_bg for "desk" effect
+
             // Search colors
             search_match_bg: Color::Rgb(100, 100, 20), // Yellow-brown highlight
             search_match_fg: Color::Rgb(255, 255, 255),
@@ -573,6 +585,9 @@ impl Theme {
             scrollbar_track_hover_fg: Color::DarkGray,
             scrollbar_thumb_hover_fg: Color::Black,
 
+            // Compose mode colors
+            compose_margin_bg: Color::Rgb(220, 220, 225), // Slightly darker than white for "desk" effect
+
             // Search colors
             search_match_bg: Color::Rgb(255, 255, 150), // Light yellow highlight
             search_match_fg: Color::Rgb(0, 0, 0),
@@ -666,6 +681,9 @@ impl Theme {
             scrollbar_thumb_fg: Color::Yellow,
             scrollbar_track_hover_fg: Color::Yellow,
             scrollbar_thumb_hover_fg: Color::Cyan,
+
+            // Compose mode colors
+            compose_margin_bg: Color::Rgb(10, 10, 10), // Very dark for high contrast "desk" effect
 
             // Search colors
             search_match_bg: Color::Yellow,

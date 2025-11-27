@@ -1437,7 +1437,7 @@ impl SplitRenderer {
         frame: &mut Frame,
         area: Rect,
         layout: &ComposeLayout,
-        view_mode: &ViewMode,
+        _view_mode: &ViewMode,
         theme: &crate::view::theme::Theme,
     ) {
         // Render margins if there are any pads (indicates compose layout is active)
@@ -1445,19 +1445,56 @@ impl SplitRenderer {
             return;
         }
 
-        let margin_style = Style::default().bg(theme.line_number_bg);
+        // Paper-on-desk effect: outer "desk" margin with inner "paper edge"
+        // Layout: [desk][paper edge][content][paper edge][desk]
+        const PAPER_EDGE_WIDTH: u16 = 1;
+
+        let desk_style = Style::default().bg(theme.compose_margin_bg);
+        let paper_style = Style::default().bg(theme.editor_bg);
+
         if layout.left_pad > 0 {
-            let left_rect = Rect::new(area.x, area.y, layout.left_pad, area.height);
-            frame.render_widget(Block::default().style(margin_style), left_rect);
+            let paper_edge = PAPER_EDGE_WIDTH.min(layout.left_pad);
+            let desk_width = layout.left_pad.saturating_sub(paper_edge);
+
+            // Desk area (outer)
+            if desk_width > 0 {
+                let desk_rect = Rect::new(area.x, area.y, desk_width, area.height);
+                frame.render_widget(Block::default().style(desk_style), desk_rect);
+            }
+
+            // Paper edge (inner, adjacent to content)
+            if paper_edge > 0 {
+                let paper_rect = Rect::new(
+                    area.x + desk_width,
+                    area.y,
+                    paper_edge,
+                    area.height,
+                );
+                frame.render_widget(Block::default().style(paper_style), paper_rect);
+            }
         }
+
         if layout.right_pad > 0 {
-            let right_rect = Rect::new(
-                area.x + layout.left_pad + layout.render_area.width,
-                area.y,
-                layout.right_pad,
-                area.height,
-            );
-            frame.render_widget(Block::default().style(margin_style), right_rect);
+            let paper_edge = PAPER_EDGE_WIDTH.min(layout.right_pad);
+            let desk_width = layout.right_pad.saturating_sub(paper_edge);
+            let right_start = area.x + layout.left_pad + layout.render_area.width;
+
+            // Paper edge (inner, adjacent to content)
+            if paper_edge > 0 {
+                let paper_rect = Rect::new(right_start, area.y, paper_edge, area.height);
+                frame.render_widget(Block::default().style(paper_style), paper_rect);
+            }
+
+            // Desk area (outer)
+            if desk_width > 0 {
+                let desk_rect = Rect::new(
+                    right_start + paper_edge,
+                    area.y,
+                    desk_width,
+                    area.height,
+                );
+                frame.render_widget(Block::default().style(desk_style), desk_rect);
+            }
         }
     }
 
@@ -2358,10 +2395,10 @@ impl SplitRenderer {
         }
 
         frame.render_widget(Clear, render_area);
-        frame.render_widget(
-            Paragraph::new(lines).block(Block::default().borders(Borders::NONE)),
-            render_area,
-        );
+        let editor_block = Block::default()
+            .borders(Borders::NONE)
+            .style(Style::default().bg(theme.editor_bg));
+        frame.render_widget(Paragraph::new(lines).block(editor_block), render_area);
 
         // Render column guides if present (for tables, etc.)
         if let Some(guides) = compose_column_guides {
