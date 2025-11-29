@@ -812,7 +812,7 @@ impl Theme {
             tab_inactive_bg: Color::Rgb(0, 0, 128),
             tab_separator_bg: Color::Rgb(0, 0, 170),
             tab_close_hover_fg: Color::Rgb(255, 85, 85), // Bright red for close hover
-            tab_hover_bg: Color::Rgb(0, 0, 200), // Slightly brighter blue for hover
+            tab_hover_bg: Color::Rgb(0, 0, 200),         // Slightly brighter blue for hover
 
             // Menu bar colors - classic DOS menu style
             menu_bg: Color::Rgb(170, 170, 170),

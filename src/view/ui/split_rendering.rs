@@ -391,7 +391,14 @@ impl SplitRenderer {
         hide_cursor: bool,
         hovered_tab: Option<(BufferId, crate::model::event::SplitId, bool)>, // (buffer_id, split_id, is_close_button)
     ) -> (
-        Vec<(crate::model::event::SplitId, BufferId, Rect, Rect, usize, usize)>,
+        Vec<(
+            crate::model::event::SplitId,
+            BufferId,
+            Rect,
+            Rect,
+            usize,
+            usize,
+        )>,
         Vec<(crate::model::event::SplitId, BufferId, u16, u16, u16, u16)>,
     ) {
         let _span = tracing::trace_span!("render_content").entered();

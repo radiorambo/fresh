@@ -203,7 +203,10 @@ impl TabsRenderer {
             // Add name span
             all_tab_spans.push((Span::styled(tab_name_text, base_style), tab_name_width));
             // Add close button span (can have different style when hovered)
-            all_tab_spans.push((Span::styled(close_text.to_string(), close_style), close_width));
+            all_tab_spans.push((
+                Span::styled(close_text.to_string(), close_style),
+                close_width,
+            ));
 
             // Add a small separator between tabs if it's not the last tab
             if idx < split_buffers.len() - 1 {
@@ -383,7 +386,9 @@ impl TabsRenderer {
             };
 
             // Close button position (if visible)
-            let screen_close_start = if logical_close_start >= visible_start && logical_close_start < visible_end {
+            let screen_close_start = if logical_close_start >= visible_start
+                && logical_close_start < visible_end
+            {
                 area.x + left_indicator_offset as u16 + (logical_close_start - visible_start) as u16
             } else if logical_close_start < visible_start {
                 // Close button is partially/fully scrolled off left - use screen_start

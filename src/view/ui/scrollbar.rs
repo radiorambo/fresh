@@ -47,9 +47,9 @@ impl ScrollbarState {
         }
 
         // Calculate thumb size based on viewport ratio
-        let thumb_size_raw =
-            ((self.visible_items as f64 / self.total_items as f64) * track_height as f64).ceil()
-                as usize;
+        let thumb_size_raw = ((self.visible_items as f64 / self.total_items as f64)
+            * track_height as f64)
+            .ceil() as usize;
 
         // Cap thumb size: minimum 1, maximum 80% of track height
         let max_thumb_size = (track_height as f64 * 0.8).floor() as usize;

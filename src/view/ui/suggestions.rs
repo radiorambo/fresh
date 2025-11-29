@@ -185,7 +185,10 @@ impl SuggestionsRenderer {
                 }
             } else {
                 // No keybinding for this command, pad the column
-                spans.push(Span::styled(" ".repeat(keybinding_column_width), base_style));
+                spans.push(Span::styled(
+                    " ".repeat(keybinding_column_width),
+                    base_style,
+                ));
             }
 
             // Spacing before description column

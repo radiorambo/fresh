@@ -240,9 +240,7 @@ impl Editor {
 
         // Convert HoverTarget to tab hover info for rendering
         let hovered_tab = match &self.mouse_state.hover_target {
-            Some(HoverTarget::TabName(buffer_id, split_id)) => {
-                Some((*buffer_id, *split_id, false))
-            }
+            Some(HoverTarget::TabName(buffer_id, split_id)) => Some((*buffer_id, *split_id, false)),
             Some(HoverTarget::TabCloseButton(buffer_id, split_id)) => {
                 Some((*buffer_id, *split_id, true))
             }
@@ -288,7 +286,9 @@ impl Editor {
                     let max_height = main_chunks[prompt_line_idx].y.saturating_sub(2).min(20);
                     let popup_area = ratatui::layout::Rect {
                         x: 0,
-                        y: main_chunks[prompt_line_idx].y.saturating_sub(max_height + 1),
+                        y: main_chunks[prompt_line_idx]
+                            .y
+                            .saturating_sub(max_height + 1),
                         width: size.width,
                         height: max_height,
                     };
@@ -385,10 +385,20 @@ impl Editor {
                         &theme,
                     );
                 } else {
-                    StatusBarRenderer::render_prompt(frame, main_chunks[prompt_line_idx], prompt, &theme);
+                    StatusBarRenderer::render_prompt(
+                        frame,
+                        main_chunks[prompt_line_idx],
+                        prompt,
+                        &theme,
+                    );
                 }
             } else {
-                StatusBarRenderer::render_prompt(frame, main_chunks[prompt_line_idx], prompt, &theme);
+                StatusBarRenderer::render_prompt(
+                    frame,
+                    main_chunks[prompt_line_idx],
+                    prompt,
+                    &theme,
+                );
             }
         }
 

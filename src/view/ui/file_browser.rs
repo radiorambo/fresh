@@ -65,9 +65,7 @@ impl FileBrowserRenderer {
         let scrollbar_width = 1u16;
 
         let content_width = inner_area.width.saturating_sub(scrollbar_width);
-        let list_height = inner_area
-            .height
-            .saturating_sub(nav_height + header_height);
+        let list_height = inner_area.height.saturating_sub(nav_height + header_height);
 
         // Navigation area
         let nav_area = Rect::new(inner_area.x, inner_area.y, content_width, nav_height);
@@ -102,11 +100,8 @@ impl FileBrowserRenderer {
         let visible_rows = Self::render_file_list(frame, list_area, state, theme, hover_target);
 
         // Render scrollbar with theme colors (hover-aware)
-        let scrollbar_state = ScrollbarState::new(
-            state.entries.len(),
-            visible_rows,
-            state.scroll_offset,
-        );
+        let scrollbar_state =
+            ScrollbarState::new(state.entries.len(), visible_rows, state.scroll_offset);
         let is_scrollbar_hovered = matches!(
             hover_target,
             Some(crate::app::HoverTarget::FileBrowserScrollbar)
@@ -116,7 +111,8 @@ impl FileBrowserRenderer {
         } else {
             ScrollbarColors::from_theme(theme)
         };
-        let (thumb_start, thumb_end) = render_scrollbar(frame, scrollbar_area, &scrollbar_state, &colors);
+        let (thumb_start, thumb_end) =
+            render_scrollbar(frame, scrollbar_area, &scrollbar_state, &colors);
 
         Some(FileBrowserLayout {
             nav_area,
@@ -151,7 +147,8 @@ impl FileBrowserRenderer {
 
         for (idx, shortcut) in state.shortcuts.iter().enumerate() {
             let is_selected = is_nav_active && idx == state.selected_shortcut;
-            let is_hovered = matches!(hover_target, Some(HoverTarget::FileBrowserNavShortcut(i)) if *i == idx);
+            let is_hovered =
+                matches!(hover_target, Some(HoverTarget::FileBrowserNavShortcut(i)) if *i == idx);
 
             let style = if is_selected {
                 Style::default()
@@ -163,9 +160,7 @@ impl FileBrowserRenderer {
                     .fg(theme.menu_hover_fg)
                     .bg(theme.menu_hover_bg)
             } else {
-                Style::default()
-                    .fg(theme.help_key_fg)
-                    .bg(theme.popup_bg)
+                Style::default().fg(theme.help_key_fg).bg(theme.popup_bg)
             };
 
             spans.push(Span::styled(format!(" {} ", shortcut.label), style));
@@ -232,8 +227,18 @@ impl FileBrowserRenderer {
         let mut spans = Vec::new();
 
         // Name column
-        let name_header = format!(" Name{}", if state.sort_mode == SortMode::Name { sort_arrow } else { " " });
-        let is_name_hovered = matches!(hover_target, Some(HoverTarget::FileBrowserHeader(SortMode::Name)));
+        let name_header = format!(
+            " Name{}",
+            if state.sort_mode == SortMode::Name {
+                sort_arrow
+            } else {
+                " "
+            }
+        );
+        let is_name_hovered = matches!(
+            hover_target,
+            Some(HoverTarget::FileBrowserHeader(SortMode::Name))
+        );
         let name_style = if state.sort_mode == SortMode::Name {
             active_header_style
         } else if is_name_hovered {
@@ -251,10 +256,20 @@ impl FileBrowserRenderer {
         // Size column
         let size_header = format!(
             "{:>width$}",
-            format!("Size{}", if state.sort_mode == SortMode::Size { sort_arrow } else { " " }),
+            format!(
+                "Size{}",
+                if state.sort_mode == SortMode::Size {
+                    sort_arrow
+                } else {
+                    " "
+                }
+            ),
             width = size_col_width
         );
-        let is_size_hovered = matches!(hover_target, Some(HoverTarget::FileBrowserHeader(SortMode::Size)));
+        let is_size_hovered = matches!(
+            hover_target,
+            Some(HoverTarget::FileBrowserHeader(SortMode::Size))
+        );
         let size_style = if state.sort_mode == SortMode::Size {
             active_header_style
         } else if is_size_hovered {
@@ -270,10 +285,20 @@ impl FileBrowserRenderer {
         // Modified column
         let modified_header = format!(
             "{:>width$}",
-            format!("Modified{}", if state.sort_mode == SortMode::Modified { sort_arrow } else { " " }),
+            format!(
+                "Modified{}",
+                if state.sort_mode == SortMode::Modified {
+                    sort_arrow
+                } else {
+                    " "
+                }
+            ),
             width = date_col_width
         );
-        let is_modified_hovered = matches!(hover_target, Some(HoverTarget::FileBrowserHeader(SortMode::Modified)));
+        let is_modified_hovered = matches!(
+            hover_target,
+            Some(HoverTarget::FileBrowserHeader(SortMode::Modified))
+        );
         let modified_style = if state.sort_mode == SortMode::Modified {
             active_header_style
         } else if is_modified_hovered {
@@ -355,7 +380,8 @@ impl FileBrowserRenderer {
         for (view_idx, entry) in visible_entries.iter().enumerate() {
             let actual_idx = state.scroll_offset + view_idx;
             let is_selected = is_files_active && state.selected_index == Some(actual_idx);
-            let is_hovered = matches!(hover_target, Some(HoverTarget::FileBrowserEntry(i)) if *i == actual_idx);
+            let is_hovered =
+                matches!(hover_target, Some(HoverTarget::FileBrowserEntry(i)) if *i == actual_idx);
 
             // Base style based on selection, hover, and filter match
             let base_style = if is_selected {
@@ -373,9 +399,7 @@ impl FileBrowserRenderer {
                     .bg(theme.popup_bg)
                     .add_modifier(Modifier::DIM)
             } else {
-                Style::default()
-                    .fg(theme.popup_text_fg)
-                    .bg(theme.popup_bg)
+                Style::default().fg(theme.popup_text_fg).bg(theme.popup_bg)
             };
 
             let mut spans = Vec::new();
@@ -392,7 +416,10 @@ impl FileBrowserRenderer {
                 format!("{:<width$}", name_with_indicator, width = name_col_width)
             } else {
                 // Truncate with ellipsis
-                let truncated: String = name_with_indicator.chars().take(name_col_width - 3).collect();
+                let truncated: String = name_with_indicator
+                    .chars()
+                    .take(name_col_width - 3)
+                    .collect();
                 format!("{}...", truncated)
             };
 
@@ -430,7 +457,8 @@ impl FileBrowserRenderer {
                 .and_then(|m| m.modified)
                 .map(format_modified)
                 .unwrap_or_else(|| "--".to_string());
-            let modified_formatted = format!("{:>width$}", modified_display, width = date_col_width);
+            let modified_formatted =
+                format!("{:>width$}", modified_display, width = date_col_width);
             spans.push(Span::styled(modified_formatted, base_style));
 
             lines.push(Line::from(spans));

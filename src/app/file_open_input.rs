@@ -64,13 +64,15 @@ impl Editor {
             Action::PromptAcceptSuggestion => {
                 // Get the selected entry info
                 let selected_info = self.file_open_state.as_ref().and_then(|s| {
-                    s.selected_index.and_then(|idx| s.entries.get(idx)).map(|e| {
-                        (
-                            e.fs_entry.name.clone(),
-                            e.fs_entry.is_dir(),
-                            e.fs_entry.path.clone(),
-                        )
-                    })
+                    s.selected_index
+                        .and_then(|idx| s.entries.get(idx))
+                        .map(|e| {
+                            (
+                                e.fs_entry.name.clone(),
+                                e.fs_entry.is_dir(),
+                                e.fs_entry.path.clone(),
+                            )
+                        })
                 });
 
                 if let Some((name, is_dir, path)) = selected_info {
@@ -421,11 +423,7 @@ impl Editor {
     }
 
     /// Compute hover target for file browser
-    pub fn compute_file_browser_hover(
-        &self,
-        x: u16,
-        y: u16,
-    ) -> Option<super::types::HoverTarget> {
+    pub fn compute_file_browser_hover(&self, x: u16, y: u16) -> Option<super::types::HoverTarget> {
         use super::types::HoverTarget;
 
         let layout = self.file_browser_layout.as_ref()?;

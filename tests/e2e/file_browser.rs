@@ -87,8 +87,14 @@ fn test_file_browser_lists_files() {
     let screen = harness.screen_to_string();
 
     // Should show all files
-    assert!(screen.contains("alpha_test.txt"), "alpha file should be listed");
-    assert!(screen.contains("beta_test.txt"), "beta file should be listed");
+    assert!(
+        screen.contains("alpha_test.txt"),
+        "alpha file should be listed"
+    );
+    assert!(
+        screen.contains("beta_test.txt"),
+        "beta file should be listed"
+    );
 
     // Directories should have a trailing slash indicator
     assert!(
@@ -126,12 +132,8 @@ fn test_file_browser_arrow_navigation() {
         .expect("Files should load");
 
     // Move down twice
-    harness
-        .send_key(KeyCode::Down, KeyModifiers::NONE)
-        .unwrap();
-    harness
-        .send_key(KeyCode::Down, KeyModifiers::NONE)
-        .unwrap();
+    harness.send_key(KeyCode::Down, KeyModifiers::NONE).unwrap();
+    harness.send_key(KeyCode::Down, KeyModifiers::NONE).unwrap();
     harness.render().unwrap();
 
     // Move back up
@@ -350,8 +352,14 @@ fn test_file_browser_column_headers() {
     let screen = harness.screen_to_string();
 
     // Should show column headers
-    assert!(screen.contains("Name"), "Name column header should be visible");
-    assert!(screen.contains("Size"), "Size column header should be visible");
+    assert!(
+        screen.contains("Name"),
+        "Name column header should be visible"
+    );
+    assert!(
+        screen.contains("Size"),
+        "Size column header should be visible"
+    );
     assert!(
         screen.contains("Modified"),
         "Modified column header should be visible"
@@ -464,7 +472,10 @@ fn test_file_browser_is_native_implementation() {
         .expect("Native file browser should work");
 
     let screen = harness.screen_to_string();
-    assert!(screen.contains("Navigation:"), "File browser popup should appear");
+    assert!(
+        screen.contains("Navigation:"),
+        "File browser popup should appear"
+    );
     assert!(screen.contains("native_test.txt"), "Files should be listed");
 }
 
@@ -542,7 +553,10 @@ fn test_file_browser_click_sort_header() {
     let screen = harness.screen_to_string();
     assert!(screen.contains("Name"), "Name header should be visible");
     assert!(screen.contains("Size"), "Size header should be visible");
-    assert!(screen.contains("Modified"), "Modified header should be visible");
+    assert!(
+        screen.contains("Modified"),
+        "Modified header should be visible"
+    );
 }
 
 /// Test clicking on file list items to select
@@ -674,8 +688,11 @@ fn test_file_browser_mouse_scroll() {
 
     // Create many files to ensure we need scrolling
     for i in 0..30 {
-        fs::write(project_root.join(format!("file_{:02}.txt", i)), format!("content {}", i))
-            .unwrap();
+        fs::write(
+            project_root.join(format!("file_{:02}.txt", i)),
+            format!("content {}", i),
+        )
+        .unwrap();
     }
 
     let mut harness = EditorTestHarness::with_config_and_working_dir(
@@ -870,11 +887,9 @@ fn test_file_browser_prompt_shows_buffer_directory() {
     let prompt_line = prompt_line.trim();
 
     assert_eq!(
-        prompt_line,
-        expected_prompt,
+        prompt_line, expected_prompt,
         "Prompt line should exactly match the directory path.\nExpected: '{}'\nActual: '{}'",
-        expected_prompt,
-        prompt_line,
+        expected_prompt, prompt_line,
     );
 
     // The sibling file should be visible in the file list

@@ -1004,7 +1004,9 @@ fn test_tab_close_button_hover_changes_color() {
     println!("Tab row length: {}", tab_row.len());
 
     // Find the position of the first × in the tab bar
-    let x_pos = tab_row.find('×').expect("Could not find × close button in tab bar");
+    let x_pos = tab_row
+        .find('×')
+        .expect("Could not find × close button in tab bar");
     println!("Found × at position: {}", x_pos);
 
     // Get the color of the × before hovering
@@ -1013,7 +1015,9 @@ fn test_tab_close_button_hover_changes_color() {
     println!("Color before hover: {:?}", fg_before);
 
     // Now hover over the × position
-    harness.mouse_move(x_pos as u16, layout::TAB_BAR_ROW as u16).unwrap();
+    harness
+        .mouse_move(x_pos as u16, layout::TAB_BAR_ROW as u16)
+        .unwrap();
 
     // Get the color after hovering
     let style_after = harness.get_cell_style(x_pos as u16, layout::TAB_BAR_ROW as u16);
@@ -1034,7 +1038,9 @@ fn test_tab_close_button_hover_changes_color() {
             assert!(
                 r > 200 && g < 150 && b < 150,
                 "Expected red-ish hover color, got RGB({}, {}, {})",
-                r, g, b
+                r,
+                g,
+                b
             );
         }
         other => panic!("Expected RGB color for hover, got {:?}", other),
@@ -1067,13 +1073,20 @@ fn test_tab_hover_position_accuracy() {
     // Find all × positions (there should be 2, one for each tab)
     let x_positions: Vec<usize> = tab_row.match_indices('×').map(|(i, _)| i).collect();
     println!("× positions: {:?}", x_positions);
-    assert_eq!(x_positions.len(), 2, "Expected 2 close buttons (one per tab)");
+    assert_eq!(
+        x_positions.len(),
+        2,
+        "Expected 2 close buttons (one per tab)"
+    );
 
     // For each close button position, verify that hovering there:
     // 1. Changes the color at that position (hover is detected)
     // 2. Does NOT change the color at the other close button position (hover is position-specific)
     for (idx, &x_pos) in x_positions.iter().enumerate() {
-        println!("\n--- Testing close button {} at position {} ---", idx, x_pos);
+        println!(
+            "\n--- Testing close button {} at position {} ---",
+            idx, x_pos
+        );
 
         // Reset by moving mouse away
         harness.mouse_move(0, 0).unwrap();
@@ -1081,17 +1094,27 @@ fn test_tab_hover_position_accuracy() {
         // Get colors of both × before hovering
         let colors_before: Vec<_> = x_positions
             .iter()
-            .map(|&pos| harness.get_cell_style(pos as u16, layout::TAB_BAR_ROW as u16).and_then(|s| s.fg))
+            .map(|&pos| {
+                harness
+                    .get_cell_style(pos as u16, layout::TAB_BAR_ROW as u16)
+                    .and_then(|s| s.fg)
+            })
             .collect();
         println!("Colors before hover: {:?}", colors_before);
 
         // Hover over the current close button
-        harness.mouse_move(x_pos as u16, layout::TAB_BAR_ROW as u16).unwrap();
+        harness
+            .mouse_move(x_pos as u16, layout::TAB_BAR_ROW as u16)
+            .unwrap();
 
         // Get colors of both × after hovering
         let colors_after: Vec<_> = x_positions
             .iter()
-            .map(|&pos| harness.get_cell_style(pos as u16, layout::TAB_BAR_ROW as u16).and_then(|s| s.fg))
+            .map(|&pos| {
+                harness
+                    .get_cell_style(pos as u16, layout::TAB_BAR_ROW as u16)
+                    .and_then(|s| s.fg)
+            })
             .collect();
         println!("Colors after hover: {:?}", colors_after);
 
@@ -1105,7 +1128,10 @@ fn test_tab_hover_position_accuracy() {
                     idx, x_pos, r, g, b
                 );
             }
-            other => panic!("Expected RGB color for hovered button {}, got {:?}", idx, other),
+            other => panic!(
+                "Expected RGB color for hovered button {}, got {:?}",
+                idx, other
+            ),
         }
 
         // The other button should NOT have changed to red (should still be the original color)
@@ -1167,7 +1193,9 @@ fn test_tab_hover_with_real_files() {
     println!("Color before: {:?}", fg_before);
 
     // Hover
-    harness.mouse_move(first_x as u16, layout::TAB_BAR_ROW as u16).unwrap();
+    harness
+        .mouse_move(first_x as u16, layout::TAB_BAR_ROW as u16)
+        .unwrap();
 
     // Get color after hover
     let style_after = harness.get_cell_style(first_x as u16, layout::TAB_BAR_ROW as u16);
@@ -1181,7 +1209,9 @@ fn test_tab_hover_with_real_files() {
             assert!(
                 r > 200 && g < 150 && b < 150,
                 "Expected red-ish hover color, got RGB({}, {}, {})",
-                r, g, b
+                r,
+                g,
+                b
             );
         }
         other => panic!("Expected RGB color, got {:?}", other),

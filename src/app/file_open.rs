@@ -247,9 +247,10 @@ impl FileOpenState {
 
         // When filter is non-empty, select first matching entry (skip "..")
         if !filter.is_empty() {
-            let first_match = self.entries.iter().position(|e| {
-                e.matches_filter && e.fs_entry.name != ".."
-            });
+            let first_match = self
+                .entries
+                .iter()
+                .position(|e| e.matches_filter && e.fs_entry.name != "..");
             if let Some(idx) = first_match {
                 self.selected_index = Some(idx);
                 self.ensure_selected_visible();
@@ -265,8 +266,8 @@ impl FileOpenState {
     fn apply_filter_internal(&mut self) {
         let filter_lower = self.filter.to_lowercase();
         for entry in &mut self.entries {
-            entry.matches_filter =
-                self.filter.is_empty() || entry.fs_entry.name.to_lowercase().contains(&filter_lower);
+            entry.matches_filter = self.filter.is_empty()
+                || entry.fs_entry.name.to_lowercase().contains(&filter_lower);
         }
     }
 
@@ -429,7 +430,8 @@ impl FileOpenState {
     pub fn page_down(&mut self, page_size: usize) {
         if self.active_section == FileOpenSection::Files {
             if let Some(idx) = self.selected_index {
-                self.selected_index = Some((idx + page_size).min(self.entries.len().saturating_sub(1)));
+                self.selected_index =
+                    Some((idx + page_size).min(self.entries.len().saturating_sub(1)));
                 self.ensure_selected_visible();
             } else if !self.entries.is_empty() {
                 self.selected_index = Some(self.entries.len().saturating_sub(1));
@@ -467,7 +469,9 @@ impl FileOpenState {
 
     /// Ensure selected item is visible in viewport
     fn ensure_selected_visible(&mut self) {
-        let Some(idx) = self.selected_index else { return };
+        let Some(idx) = self.selected_index else {
+            return;
+        };
         // This will be called with actual visible_rows from renderer
         // For now, use a reasonable default
         let visible_rows = 15;
@@ -480,7 +484,9 @@ impl FileOpenState {
 
     /// Update scroll offset based on visible rows
     pub fn update_scroll_for_visible_rows(&mut self, visible_rows: usize) {
-        let Some(idx) = self.selected_index else { return };
+        let Some(idx) = self.selected_index else {
+            return;
+        };
         if idx < self.scroll_offset {
             self.scroll_offset = idx;
         } else if idx >= self.scroll_offset + visible_rows {
