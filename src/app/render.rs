@@ -1244,10 +1244,7 @@ impl Editor {
     /// - More efficient for typical editing patterns
     /// - Plugins can choose to re-diff if they need more accuracy
     ///
-    pub(super) fn calculate_event_line_info(
-        &self,
-        event: &Event,
-    ) -> super::types::EventLineInfo {
+    pub(super) fn calculate_event_line_info(&self, event: &Event) -> super::types::EventLineInfo {
         match event {
             Event::Insert { position, text, .. } => {
                 // Get line number at insert position (from original buffer)
@@ -1263,7 +1260,11 @@ impl Editor {
                     line_delta: lines_added as i32,
                 }
             }
-            Event::Delete { range, deleted_text, .. } => {
+            Event::Delete {
+                range,
+                deleted_text,
+                ..
+            } => {
                 // Get line numbers for the deleted range (from original buffer)
                 let start_line = self.active_state().buffer.get_line_number(range.start);
                 let end_line = self.active_state().buffer.get_line_number(range.end);

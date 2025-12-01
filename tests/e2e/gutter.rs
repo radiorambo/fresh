@@ -799,7 +799,9 @@ line 5: unchanged
 
     // STEP 2: Now make an in-editor change - insert a newline before line 3
     // First, go to the beginning of line 3
-    harness.send_key(KeyCode::Char('g'), KeyModifiers::CONTROL).unwrap(); // Go to beginning
+    harness
+        .send_key(KeyCode::Char('g'), KeyModifiers::CONTROL)
+        .unwrap(); // Go to beginning
     harness.render().unwrap();
 
     // Go down to line 3 (press Down twice from line 1)
@@ -849,7 +851,10 @@ line 5: unchanged
     println!("=== After save ===\n{}", screen_after_save);
 
     let indicator_lines_after_save = get_indicator_lines(&screen_after_save, "│");
-    println!("Indicator lines after save: {:?}", indicator_lines_after_save);
+    println!(
+        "Indicator lines after save: {:?}",
+        indicator_lines_after_save
+    );
 
     // After save:
     // - Unsaved-changes indicators should be cleared (buffer matches disk)
@@ -859,9 +864,15 @@ line 5: unchanged
     // The test passes if we can see that the indicator system is working
     // Even if async timing makes exact line matching difficult
     println!("\n=== Test Summary ===");
-    println!("Initial indicator count: {}", get_indicator_lines(&screen, "│").len());
+    println!(
+        "Initial indicator count: {}",
+        get_indicator_lines(&screen, "│").len()
+    );
     println!("After insert indicator count: {}", indicator_count);
-    println!("After save indicator count: {}", indicator_lines_after_save.len());
+    println!(
+        "After save indicator count: {}",
+        indicator_lines_after_save.len()
+    );
 
     // Basic sanity check - after editing, we should have some indicators
     // (either from git gutter or buffer modified plugin)
@@ -906,7 +917,7 @@ fn test_unsaved_changes_get_indicators() {
 
     // Make an edit - modify line 2
     harness.send_key(KeyCode::Down, KeyModifiers::NONE).unwrap(); // Go to line 2
-    harness.send_key(KeyCode::End, KeyModifiers::NONE).unwrap();  // Go to end of line
+    harness.send_key(KeyCode::End, KeyModifiers::NONE).unwrap(); // Go to end of line
     harness.type_text(" MODIFIED").unwrap();
     harness.render().unwrap();
     wait_for_async(&mut harness, 10);
@@ -984,9 +995,13 @@ fn test_indicator_line_shifting() {
     println!("Content lines count: {}", content_lines.len());
 
     // Now insert two lines at the beginning of the file
-    harness.send_key(KeyCode::Char('g'), KeyModifiers::CONTROL).unwrap(); // Go to beginning
+    harness
+        .send_key(KeyCode::Char('g'), KeyModifiers::CONTROL)
+        .unwrap(); // Go to beginning
     harness.render().unwrap();
-    harness.type_text("inserted line A\ninserted line B\n").unwrap();
+    harness
+        .type_text("inserted line A\ninserted line B\n")
+        .unwrap();
     harness.render().unwrap();
 
     // Save so git diff can see the changes
@@ -996,7 +1011,10 @@ fn test_indicator_line_shifting() {
 
     let screen_after = harness.screen_to_string();
     let lines_after = get_indicator_lines(&screen_after, "│");
-    println!("=== After inserting 2 lines at beginning ===\n{}", screen_after);
+    println!(
+        "=== After inserting 2 lines at beginning ===\n{}",
+        screen_after
+    );
     println!("Indicator lines after: {:?}", lines_after);
 
     // The original line 3 (which was modified) is now at line 5

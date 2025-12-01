@@ -1615,7 +1615,9 @@ impl SplitRenderer {
         // This helps tree-sitter parse multi-line constructs that span viewport boundaries.
         let viewport_size = viewport_end.saturating_sub(viewport_start);
         let highlight_start = viewport_start.saturating_sub(viewport_size);
-        let highlight_end = viewport_end.saturating_add(viewport_size).min(state.buffer.len());
+        let highlight_end = viewport_end
+            .saturating_add(viewport_size)
+            .min(state.buffer.len());
 
         let highlight_spans = if let Some(highlighter) = &mut state.highlighter {
             highlighter.highlight_viewport(&state.buffer, highlight_start, highlight_end, theme)
@@ -1661,12 +1663,11 @@ impl SplitRenderer {
                 .collect();
 
         // Pre-compute line indicators for the viewport (only query markers in visible range)
-        let line_indicators =
-            state
-                .margins
-                .get_indicators_for_viewport(viewport_start, viewport_end, |byte_offset| {
-                    state.buffer.get_line_number(byte_offset)
-                });
+        let line_indicators = state.margins.get_indicators_for_viewport(
+            viewport_start,
+            viewport_end,
+            |byte_offset| state.buffer.get_line_number(byte_offset),
+        );
 
         DecorationContext {
             highlight_spans,

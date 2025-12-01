@@ -435,7 +435,11 @@ impl MarginManager {
     ///
     /// Note: This is O(n) in the number of indicators. For rendering, prefer
     /// `get_indicators_in_viewport` which is more efficient.
-    pub fn get_line_indicator(&self, line: usize, get_line_fn: impl Fn(usize) -> usize) -> Option<&LineIndicator> {
+    pub fn get_line_indicator(
+        &self,
+        line: usize,
+        get_line_fn: impl Fn(usize) -> usize,
+    ) -> Option<&LineIndicator> {
         // Find all indicators on this line
         let mut best: Option<&LineIndicator> = None;
 
@@ -472,8 +476,9 @@ impl MarginManager {
         let mut by_line: BTreeMap<usize, LineIndicator> = BTreeMap::new();
 
         // Query only markers within the viewport byte range
-        for (marker_id, byte_pos, _end) in
-            self.indicator_markers.query_range(viewport_start, viewport_end)
+        for (marker_id, byte_pos, _end) in self
+            .indicator_markers
+            .query_range(viewport_start, viewport_end)
         {
             // Look up the indicators for this marker
             if let Some(indicators) = self.line_indicators.get(&marker_id.0) {
@@ -841,7 +846,11 @@ mod tests {
         let breakpoint_indicator = LineIndicator::new("●", Color::Red, 20);
 
         manager.set_line_indicator(line_to_byte(5), "git-gutter".to_string(), git_indicator);
-        manager.set_line_indicator(line_to_byte(5), "breakpoints".to_string(), breakpoint_indicator);
+        manager.set_line_indicator(
+            line_to_byte(5),
+            "breakpoints".to_string(),
+            breakpoint_indicator,
+        );
 
         // Should return the highest priority indicator
         let retrieved = manager.get_line_indicator(5, byte_to_line);
@@ -856,9 +865,21 @@ mod tests {
         let mut manager = MarginManager::new();
 
         // Add indicators on multiple lines
-        manager.set_line_indicator(line_to_byte(1), "git-gutter".to_string(), LineIndicator::new("│", Color::Green, 10));
-        manager.set_line_indicator(line_to_byte(2), "git-gutter".to_string(), LineIndicator::new("│", Color::Yellow, 10));
-        manager.set_line_indicator(line_to_byte(3), "breakpoints".to_string(), LineIndicator::new("●", Color::Red, 20));
+        manager.set_line_indicator(
+            line_to_byte(1),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Green, 10),
+        );
+        manager.set_line_indicator(
+            line_to_byte(2),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Yellow, 10),
+        );
+        manager.set_line_indicator(
+            line_to_byte(3),
+            "breakpoints".to_string(),
+            LineIndicator::new("●", Color::Red, 20),
+        );
 
         // Clear git-gutter namespace
         manager.clear_line_indicators_for_namespace("git-gutter");
@@ -878,8 +899,16 @@ mod tests {
         let mut manager = MarginManager::new();
 
         // Add two indicators at the same byte position (line 5)
-        let git_marker = manager.set_line_indicator(line_to_byte(5), "git-gutter".to_string(), LineIndicator::new("│", Color::Green, 10));
-        let bp_marker = manager.set_line_indicator(line_to_byte(5), "breakpoints".to_string(), LineIndicator::new("●", Color::Red, 20));
+        let git_marker = manager.set_line_indicator(
+            line_to_byte(5),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Green, 10),
+        );
+        let bp_marker = manager.set_line_indicator(
+            line_to_byte(5),
+            "breakpoints".to_string(),
+            LineIndicator::new("●", Color::Red, 20),
+        );
 
         // Remove just the git-gutter indicator
         manager.remove_line_indicator(git_marker, "git-gutter");
@@ -901,7 +930,11 @@ mod tests {
         let mut manager = MarginManager::new();
 
         // Add indicator on line 5 (byte 50)
-        manager.set_line_indicator(line_to_byte(5), "git-gutter".to_string(), LineIndicator::new("│", Color::Green, 10));
+        manager.set_line_indicator(
+            line_to_byte(5),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Green, 10),
+        );
 
         // Verify it's on line 5
         assert!(manager.get_line_indicator(5, byte_to_line).is_some());
@@ -920,7 +953,11 @@ mod tests {
         let mut manager = MarginManager::new();
 
         // Add indicator on line 5 (byte 50)
-        manager.set_line_indicator(line_to_byte(5), "git-gutter".to_string(), LineIndicator::new("│", Color::Green, 10));
+        manager.set_line_indicator(
+            line_to_byte(5),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Green, 10),
+        );
 
         // Verify it's on line 5
         assert!(manager.get_line_indicator(5, byte_to_line).is_some());
@@ -938,9 +975,21 @@ mod tests {
         let mut manager = MarginManager::new();
 
         // Add indicators on lines 3, 5, and 7
-        manager.set_line_indicator(line_to_byte(3), "git-gutter".to_string(), LineIndicator::new("│", Color::Green, 10));
-        manager.set_line_indicator(line_to_byte(5), "git-gutter".to_string(), LineIndicator::new("│", Color::Yellow, 10));
-        manager.set_line_indicator(line_to_byte(7), "git-gutter".to_string(), LineIndicator::new("│", Color::Red, 10));
+        manager.set_line_indicator(
+            line_to_byte(3),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Green, 10),
+        );
+        manager.set_line_indicator(
+            line_to_byte(5),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Yellow, 10),
+        );
+        manager.set_line_indicator(
+            line_to_byte(7),
+            "git-gutter".to_string(),
+            LineIndicator::new("│", Color::Red, 10),
+        );
 
         // Insert 2 lines (20 bytes) at byte 25 (middle of line 2)
         // This should shift lines 3, 5, 7 -> lines 5, 7, 9

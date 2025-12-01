@@ -828,14 +828,18 @@ impl Editor {
                 ratatui::style::Color::Rgb(color.0, color.1, color.2),
                 priority,
             );
-            state.margins.set_line_indicator(byte_offset, namespace, indicator);
+            state
+                .margins
+                .set_line_indicator(byte_offset, namespace, indicator);
         }
     }
 
     /// Handle ClearLineIndicators command
     pub(super) fn handle_clear_line_indicators(&mut self, buffer_id: BufferId, namespace: String) {
         if let Some(state) = self.buffers.get_mut(&buffer_id) {
-            state.margins.clear_line_indicators_for_namespace(&namespace);
+            state
+                .margins
+                .clear_line_indicators_for_namespace(&namespace);
         }
     }
 
