@@ -3823,15 +3823,24 @@ impl Editor {
                 };
                 snapshot.buffers.insert(*buffer_id, buffer_info);
 
-                let diff = state.buffer.diff_since_saved();
-                snapshot.buffer_saved_diffs.insert(
-                    *buffer_id,
+                // Skip diffing in large file mode - too expensive
+                // TODO: Enable when we have an efficient streaming diff algorithm
+                let is_large_file = state.buffer.line_count().is_none();
+                let diff = if is_large_file {
+                    BufferSavedDiff {
+                        equal: !state.buffer.is_modified(),
+                        byte_ranges: vec![],
+                        line_ranges: None,
+                    }
+                } else {
+                    let diff = state.buffer.diff_since_saved();
                     BufferSavedDiff {
                         equal: diff.equal,
                         byte_ranges: diff.byte_ranges.clone(),
                         line_ranges: diff.line_ranges.clone(),
-                    },
-                );
+                    }
+                };
+                snapshot.buffer_saved_diffs.insert(*buffer_id, diff);
 
                 // Store cursor position for this buffer
                 let cursor_pos = state.cursors.primary().position;
