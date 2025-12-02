@@ -720,9 +720,11 @@ fn test_play_nonexistent_macro() {
     let mut harness = harness_with_auto_indent();
     harness.open_file(&file_path).unwrap();
 
-    // Try to play macro 7 (which was never recorded)
+    // Try to play macro 8 (which was never recorded)
+    // Note: We use 8 instead of 7 because Ctrl+7 is now mapped to toggle_comment
+    // (as the terminal equivalent of Ctrl+/)
     harness
-        .send_key(KeyCode::Char('7'), KeyModifiers::CONTROL)
+        .send_key(KeyCode::Char('8'), KeyModifiers::CONTROL)
         .unwrap();
     harness.render().unwrap();
 
