@@ -1,5 +1,46 @@
 # Release Notes
 
+## 0.1.40
+
+### Features
+
+* **Switch Project Command**: New "Switch Project" command (renamed from "Open Folder") to change project root with full context switch. Sessions are automatically saved and restored when switching projects, preserving open files, cursor positions, and split layouts.
+
+* **Nested Submenu Support**: Menus now support nested submenus with proper arrow indicators and positioning.
+
+* **Select Keybinding Map Command**: New popup selector to choose between different keybinding schemes.
+
+* **Double-Click in File Dialog**: Can now double-click to open files in the file open dialog.
+
+* **File Explorer UX Improvements**:
+  - Ctrl+E now focuses the file explorer instead of toggling it
+  - File explorer automatically focuses when closing the last tab
+  - Menu checkboxes properly sync with file explorer visibility state
+
+* **Split Auto-Close**: Closing the last tab in a split now automatically closes the split.
+
+### Bug Fixes
+
+* **Mouse Click Below Last Line**: Fixed mouse click below the last line incorrectly jumping to position 0,0.
+
+* **Menu Checkbox Sync**: Fixed View menu checkboxes not syncing with file explorer visibility state.
+
+* **Duplicate Buffer on Project Switch**: Fixed duplicate buffer creation when switching projects.
+
+* **Wrong Upgrade Tip**: Fixed incorrect upgrade tip message (#293).
+
+### Infrastructure
+
+* **Build System Overhaul**: Replaced cargo-dist with direct cargo builds and custom packaging for more control over the release process.
+
+* **npm OIDC Publishing**: Improved npm publish workflow with OIDC trusted publishing and provenance attestations.
+
+* **GitHub Actions Updates**: Bumped actions/checkout to v6, actions/upload-artifact to v5, actions/download-artifact to v6, and actions/setup-node to v6.
+
+* **Test Improvements**: Many test reliability improvements including Windows compatibility fixes, flaky test fixes, and better test isolation for session persistence tests.
+
+---
+
 ## 0.1.35
 
 ### Features
