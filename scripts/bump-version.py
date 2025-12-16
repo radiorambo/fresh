@@ -82,11 +82,11 @@ def update_cargo_toml(cargo_toml_path: Path, current_version: str, new_version: 
     cargo_toml_path.write_text(new_content)
 
 def update_cargo_lock() -> None:
-    """Updates Cargo.lock by running cargo build."""
+    """Updates Cargo.lock by running cargo update."""
     try:
-        run_command(["cargo", "build", "--quiet"])
+        run_command(["cargo", "update", "--workspace", "--quiet"])
     except subprocess.CalledProcessError as e:
-        print(f"{YELLOW}Warning:{NC} cargo build had some output (this might be normal)")
+        print(f"{YELLOW}Warning:{NC} cargo update had some output (this might be normal)")
         print(e.stderr)
 
 def get_previous_tag() -> Optional[str]:
@@ -146,12 +146,7 @@ def main() -> None:
     print(f"{GREEN}✓{NC} Updated Cargo.toml")
 
     print("")
-    print(f"{BLUE}Step 2:{NC} Updating Cargo.lock (running cargo build)...")
-    update_cargo_lock()
-    print(f"{GREEN}✓{NC} Updated Cargo.lock")
-
-    print("")
-    print(f"{BLUE}Step 3:{NC} Summary of changes...")
+    print(f"{BLUE}Step 2:{NC} Summary of changes...")
     print("")
     try:
         diff_result = run_command(["git", "diff", "Cargo.toml", "Cargo.lock"], capture_output=True)
@@ -197,13 +192,13 @@ def main() -> None:
         current_branch = current_branch_result.stdout.strip()
         
         print("")
-        print(f"{BLUE}Step 4:{NC} Committing changes...")
+        print(f"{BLUE}Step 3:{NC} Committing changes...")
         run_command(["git", "add", "Cargo.toml", "Cargo.lock"])
         run_command(["git", "commit", "-m", f"Bump version to {new_version}"])
         print(f"{GREEN}✓{NC} Committed")
 
         print("")
-        print(f"{BLUE}Step 5:{NC} Creating tag v{new_version}...")
+        print(f"{BLUE}Step 4:{NC} Creating tag v{new_version}...")
         if release_notes_content:
             run_command(["git", "tag", "-a", f"v{new_version}", "-F", "CHANGELOG.md"])
         else:
@@ -211,7 +206,7 @@ def main() -> None:
         print(f"{GREEN}✓{NC} Tagged")
 
         print("")
-        print(f"{BLUE}Step 6:{NC} Pushing to origin...")
+        print(f"{BLUE}Step 5:{NC} Pushing to origin...")
         run_command(["git", "push", "origin", current_branch])
         run_command(["git", "push", "origin", f"v{new_version}"])
         print(f"{GREEN}✓{NC} Pushed")
