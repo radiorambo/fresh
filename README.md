@@ -59,7 +59,7 @@ Fresh is engineered for speed. It delivers a low-latency experience, with text a
 | Nix | [Nix flakes](#nix-flakes) |
 | Developers | [From source](#from-source) |
 
-### macOS (Homebrew)
+### Homebrew (macOS, Linux Bazzite/Bluefin/Aurora)
 
 ```bash
 brew tap sinelaw/fresh
@@ -109,7 +109,7 @@ Or download the `.deb` file manually from the [releases page](https://github.com
 Download and install the latest release:
 
 ```bash
-curl -sL $(curl -s https://api.github.com/repos/sinelaw/fresh/releases/latest | grep "browser_download_url.*\.$(uname -m)\.rpm" | cut -d '"' -f 4) -o fresh-editor.rpm && sudo rpm -i fresh-editor.rpm
+curl -sL $(curl -s https://api.github.com/repos/sinelaw/fresh/releases/latest | grep "browser_download_url.*\.$(uname -m)\.rpm" | cut -d '"' -f 4) -o fresh-editor.rpm && sudo rpm -U fresh-editor.rpm
 ```
 
 Or download the `.rpm` file manually from the [releases page](https://github.com/sinelaw/fresh/releases).
@@ -182,16 +182,6 @@ git clone https://github.com/sinelaw/fresh.git
 cd fresh
 cargo build --release
 ./target/release/fresh [file]
-```
-#### For immutable distros (Bazzite, ublue, aurora, etc.)
-Install Rust via HomeBrew first
-```bash
-brew install rust
-```
-Follow the `From source` instructions above, then copy the binary your home local bin folder.
-```bash
-cp ./target/release/fresh ~/.local/bin
-fresh
 ```
 
 ## Documentation
