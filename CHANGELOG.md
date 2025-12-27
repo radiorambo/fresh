@@ -1,5 +1,27 @@
 # Release Notes
 
+## 0.1.65
+
+### Features
+
+* **Warning Indicators**: Non-intrusive warning notifications in the status bar. Click or use commands to view warnings, with domains for LSP and general warnings.
+
+* **Format Buffer Command**: Explicit command to format the current buffer on demand.
+
+* **Config Applied on Open**: `line_numbers` and `line_wrap` settings now properly apply when opening new buffers.
+
+### Bug Fixes
+
+* **Settings Persistence**: Fixed settings not persisting after save and reopen (#474, #457).
+
+* **SaveAs Overwrite Confirmation**: Added confirmation dialog when SaveAs would overwrite an existing file (#476).
+
+* **Multi-Byte Character Input**: Fixed panic when editing multi-byte characters in text inputs and prompts (#466).
+
+* **TextList Dialog**: Fixed add-new input not rendering in entry dialogs.
+
+---
+
 ## 0.1.64
 
 * To prevent accidental deletion of files, removed 'd' / delete key bindings from File Explorer, changed the underlying delete to show a prompt and to move files to trash instead of really deleting.
