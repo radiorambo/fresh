@@ -4,8 +4,9 @@ export default defineConfig({
   title: "Fresh",
   description:
     "Fresh is a fast, modern terminal text editor with intuitive keybindings, syntax highlighting, and instant startup.",
+  base: "/fresh/",
   srcDir: ".",
-  outDir: "./.vitepress/dist",
+  outDir: "../dist/docs",
 
   head: [["link", { rel: "icon", href: "/fresh/favicon.ico" }]],
 
