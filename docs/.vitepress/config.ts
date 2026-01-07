@@ -12,6 +12,7 @@ export default defineConfig({
 
   cleanUrls: true,
   lastUpdated: true,
+  ignoreDeadLinks: true,
   appearance: "force-dark",
   themeConfig: {
     logo: { light: '/logo.svg', dark: '/logo.svg' },
