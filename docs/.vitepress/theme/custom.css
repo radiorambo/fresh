@@ -8,42 +8,45 @@
     /* Typography - Monospace */
     --vp-font-family-base: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", "Liberation Mono", monospace;
     --vp-font-family-mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono", "Liberation Mono", monospace;
+}
 
-    .dark {
-        /* Background colors from design-system.json */
-        --vp-c-bg: #1a1410;
-        --vp-c-bg-alt: #0a0a0a;
-        --vp-c-bg-elv: #0a0a0a;
-        --vp-c-bg-soft: #0f0c0a;
+.dark {
+    /* Background colors */
+    --vp-c-bg: #0a0a0a;
+    --vp-c-bg-alt: #111111;
+    --vp-c-bg-elv: #202020;
+    --vp-c-bg-soft: #11111;
+    
+    --vp-local-search-bg: #171717;
 
-        /* Text colors */
-        --vp-c-text-1: #d4d4d4;
-        --vp-c-text-2: #808080;
-        --vp-c-text-3: #4d4d4d;
+    /* Text colors */
+    --vp-c-text-1: #d4d4d4;
+    --vp-c-text-2: #808080;
+    --vp-c-text-3: #4d4d4d;
 
-        /* Border */
-        --vp-c-border: #2d2d2d;
-        --vp-c-divider: #2d2d2d;
-        --vp-c-gutter: #2d2d2d;
+    /* Border */
+    --vp-c-border: #2d2d2d;
+    --vp-c-divider: #2d2d2d;
+    --vp-c-gutter: #2d2d2d;
 
-        /* Code blocks */
-        --vp-code-block-bg: #0a0a0a;
-        --vp-code-line-highlight-color: rgba(0, 217, 163, 0.1);
+    /* Code blocks */
+    --vp-code-block-bg: #111111;
+    --vp-code-line-highlight-color: rgba(0, 217, 163, 0.1);
 
-        /* Sidebar */
-        --vp-sidebar-bg-color: #1a1410;
+    /* Sidebar */
+    --vp-sidebar-bg-color: #0a0a0a;
 
-        /* Nav */
-        --vp-nav-bg-color: #1a1410;
+    /* Nav */
+    --vp-nav-bg-color: #0a0a0a;
 
-        /* Button colors */
-        --vp-button-brand-bg: #00d9a3;
-        --vp-button-brand-text: #000000;
-        --vp-button-brand-hover-bg: #00b88c;
-        --vp-button-brand-hover-text: #000000;
-        --vp-button-brand-active-bg: #009970;
-        --vp-button-brand-active-text: #000000;
-    }
+    /* Button colors */
+    --vp-button-brand-bg: #00d9a3;
+    --vp-button-brand-text: #000000;
+    --vp-button-brand-hover-bg: #00b88c;
+    --vp-button-brand-hover-text: #000000;
+    --vp-button-brand-active-bg: #009970;
+    --vp-button-brand-active-text: #000000;
+}
 
     /* Link colors */
     .vp-doc a {
