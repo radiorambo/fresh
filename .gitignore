@@ -39,3 +39,9 @@ proptest-regressions/
 # Flatpak build artifacts
 .flatpak-builder/
 repo/
+
+# VitePress
+docs/.vitepress/cache
+docs/.vitepress/dist
+node_modules
+bun.lockb
