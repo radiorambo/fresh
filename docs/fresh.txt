@@ -86,8 +86,8 @@
 
 [1m[37m📚 Learn More[0m
 [2m────────────────────────────────────────────────────────────[0m
-  [32mdocs/USER_GUIDE.md[0m          Comprehensive documentation
-  [32mdocs/PLUGIN_DEVELOPMENT.md[0m  Build your own plugins
+  [32mdocs/guide/[0m          Comprehensive documentation
+  [32mdocs/development/[0m  Build your own plugins
   [32mlocales/[0m                    Available languages (i18n)
 
 [2mPress [1mq[0m[2m or [1mEsc[0m[2m to close  |  Use [1mShow Keybindings[0m[2m command to see shortcuts[0m

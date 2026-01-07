@@ -216,10 +216,10 @@ cargo build --release
 
 ## Documentation
 
-- [User Guide](docs/USER_GUIDE.md)
-- [macOS Tips](docs/USER_GUIDE.md#macos-terminal-tips) - Terminal configuration, keyboard shortcuts, and troubleshooting for Mac users
-- [Plugin Development](docs/PLUGIN_DEVELOPMENT.md)
-- [Architecture](docs/ARCHITECTURE.md)
+- [User Guide](https://sinelaw.github.io/fresh/docs/guide/)
+- [macOS Tips](https://sinelaw.github.io/fresh/docs/guide/keyboard#macos-terminal-configuration) - Terminal configuration, keyboard shortcuts, and troubleshooting for Mac users
+- [Plugin Development](https://sinelaw.github.io/fresh/docs/development/plugin-development)
+- [Architecture](https://sinelaw.github.io/fresh/docs/development/architecture)
 
 ## Contributing
 

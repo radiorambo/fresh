@@ -63,11 +63,11 @@
 
 ## 0.1.69
 
-> **macOS Users**: This release includes significant improvements for macOS terminal compatibility. See the new [macOS Terminal Tips](docs/USER_GUIDE.md#macos-terminal-tips) guide for recommended terminal emulators and keyboard configuration. The macOS keymap ([`keymaps/macos.json`](keymaps/macos.json)) is a work in progress—please submit patches based on your experience with different terminals and keyboard layouts!
+> **macOS Users**: This release includes significant improvements for macOS terminal compatibility. See the new [macOS Terminal Tips](https://sinelaw.github.io/fresh/docs/guide/keyboard#macos-terminal-configuration) guide for recommended terminal emulators and keyboard configuration. The macOS keymap ([`keymaps/macos.json`](keymaps/macos.json)) is a work in progress—please submit patches based on your experience with different terminals and keyboard layouts!
 
 ### Features
 
-* **macOS Keymap**: Terminal-friendly keybindings that avoid broken Ctrl+Shift combinations, ASCII control char collisions (Ctrl+J=LF), and international keyboard conflicts (Ctrl+Alt+L=@ on German). Key bindings: Ctrl+R (redo), Ctrl+G (find next), Ctrl+L (go to line), Ctrl+T (go to symbol), Alt+B/F (word movement). See [macOS Terminal Tips](docs/USER_GUIDE.md#macos-terminal-tips) (#219).
+* **macOS Keymap**: Terminal-friendly keybindings that avoid broken Ctrl+Shift combinations, ASCII control char collisions (Ctrl+J=LF), and international keyboard conflicts (Ctrl+Alt+L=@ on German). Key bindings: Ctrl+R (redo), Ctrl+G (find next), Ctrl+L (go to line), Ctrl+T (go to symbol), Alt+B/F (word movement). See [macOS Terminal Tips](https://sinelaw.github.io/fresh/docs/guide/keyboard#macos-terminal-configuration) (#219).
 
 * **4-Level Config System**: Configuration now merges user, platform, project, and session layers. Settings UI shows layer indicators and allows editing specific config files.
 
