@@ -4,7 +4,6 @@ export default defineConfig({
   title: "Fresh",
   description:
     "Fresh is a fast, modern terminal text editor with intuitive keybindings, syntax highlighting, and instant startup.",
-  base: "/fresh/",
   srcDir: ".",
   outDir: "./.vitepress/dist",
 
@@ -12,10 +11,10 @@ export default defineConfig({
 
   cleanUrls: true,
   lastUpdated: true,
-  ignoreDeadLinks: true,
+  ignoreDeadLinks: ["/locales"],
   appearance: "force-dark",
   themeConfig: {
-    logo: { light: '/logo.svg', dark: '/logo.svg' },
+    logo: { light: "/logo.svg", dark: "/logo.svg" },
 
     nav: [
       { text: "Guide", link: "/guide/" },
@@ -30,9 +29,7 @@ export default defineConfig({
 
     sidebar: [
       {
-        items: [
-          { text: "Getting Started", link: "/index" },
-        ],
+        items: [{ text: "Getting Started", link: "/index" }],
       },
       {
         text: "User Guide",
