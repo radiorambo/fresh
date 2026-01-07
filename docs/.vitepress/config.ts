@@ -4,7 +4,7 @@ export default defineConfig({
   title: "Fresh",
   description:
     "Fresh is a fast, modern terminal text editor with intuitive keybindings, syntax highlighting, and instant startup.",
-  base: "/fresh/",
+  base: "/fresh/docs/",
   srcDir: ".",
   outDir: "../dist/docs",
 
