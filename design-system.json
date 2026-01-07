@@ -1,0 +1,611 @@
+{
+  "designSystemName": "Fresh UI System",
+  "version": "1.0",
+  "tokens": {
+    "colors": {
+      "primary": {
+        "value": "#00D9A3",
+        "description": "Vibrant cyan/turquoise accent color used for primary branding, links, and highlights"
+      },
+      "secondary": {
+        "value": "#808080",
+        "description": "Medium gray used for secondary text and decorative elements"
+      },
+      "background": {
+        "value": "#1A1410",
+        "description": "Dark brown primary background color"
+      },
+      "surface": {
+        "value": "#0A0A0A",
+        "description": "Very dark gray/black surface for modals and overlays"
+      },
+      "error": {
+        "value": "#FF3333",
+        "description": "Red accent for error states"
+      },
+      "success": {
+        "value": "#00D9A3",
+        "description": "Green success indicator (same as primary)"
+      },
+      "text": {
+        "primary": "#D4D4D4",
+        "secondary": "#808080",
+        "disabled": "#4D4D4D",
+        "onPrimary": "#000000"
+      },
+      "gradients": [
+        {
+          "name": "backgroundGradient",
+          "value": "linear-gradient(135deg, #2B1F18 0%, #1A1410 50%, #0F0C0A 100%)"
+        },
+        {
+          "name": "accentGradient",
+          "value": "linear-gradient(90deg, #00D9A3 0%, #00B88C 100%)"
+        }
+      ],
+      "palette": {
+        "black": "#000000",
+        "white": "#FFFFFF",
+        "darkBrown": "#1A1410",
+        "darkerBrown": "#0F0C0A",
+        "darkGray": "#0A0A0A",
+        "mediumGray": "#2D2D2D",
+        "lightGray": "#808080",
+        "cyan": "#00D9A3",
+        "cyanLight": "#00B88C",
+        "red": "#FF3333",
+        "orange": "#FF6B35",
+        "magenta": "#FF1493",
+        "blue": "#0047AB",
+        "purple": "#9D4EDD",
+        "terminalGreen": "#00FF00"
+      }
+    },
+    "typography": {
+      "fontFamily": {
+        "primary": "Courier New, monospace",
+        "mono": "Courier New, Courier, monospace",
+        "ui": "system-ui, -apple-system, sans-serif"
+      },
+      "fontWeights": {
+        "regular": 400,
+        "medium": 500,
+        "semibold": 600,
+        "bold": 700
+      },
+      "scale": {
+        "h1": {
+          "size": "72px",
+          "lineHeight": "1.2",
+          "letterSpacing": "0.02em",
+          "weight": 700,
+          "fontFamily": "Courier New, monospace"
+        },
+        "h2": {
+          "size": "48px",
+          "lineHeight": "1.3",
+          "letterSpacing": "0.01em",
+          "weight": 700,
+          "fontFamily": "Courier New, monospace"
+        },
+        "h3": {
+          "size": "32px",
+          "lineHeight": "1.4",
+          "letterSpacing": "0em",
+          "weight": 600,
+          "fontFamily": "Courier New, monospace"
+        },
+        "body1": {
+          "size": "18px",
+          "lineHeight": "1.6",
+          "letterSpacing": "0.005em",
+          "weight": 400,
+          "fontFamily": "Courier New, monospace"
+        },
+        "body2": {
+          "size": "16px",
+          "lineHeight": "1.6",
+          "letterSpacing": "0em",
+          "weight": 400,
+          "fontFamily": "Courier New, monospace"
+        },
+        "caption": {
+          "size": "14px",
+          "lineHeight": "1.5",
+          "letterSpacing": "0.01em",
+          "weight": 400,
+          "fontFamily": "Courier New, monospace"
+        },
+        "button": {
+          "size": "16px",
+          "lineHeight": "1.5",
+          "letterSpacing": "0.02em",
+          "weight": 500,
+          "fontFamily": "Courier New, monospace"
+        }
+      }
+    },
+    "spacing": {
+      "unit": 8,
+      "scale": {
+        "xs": "4px",
+        "sm": "8px",
+        "md": "16px",
+        "lg": "24px",
+        "xl": "32px",
+        "2xl": "48px",
+        "3xl": "64px",
+        "4xl": "96px"
+      }
+    },
+    "radius": {
+      "none": "0",
+      "sm": "2px",
+      "md": "4px",
+      "lg": "8px",
+      "xl": "16px",
+      "pill": "999px",
+      "circular": "50%"
+    },
+    "shadows": {
+      "elevation1": "0 2px 4px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3)",
+      "elevation2": "0 4px 8px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.4)",
+      "elevation3": "0 8px 16px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.5)",
+      "buttonHover": "0 4px 12px rgba(0, 217, 163, 0.3)",
+      "buttonActive": "0 2px 6px rgba(0, 217, 163, 0.2)",
+      "focusRing": "0 0 0 3px rgba(0, 217, 163, 0.5)"
+    },
+    "borders": {
+      "width": "1px",
+      "style": "solid",
+      "color": "#2D2D2D",
+      "colorLight": "#404040"
+    }
+  },
+  "components": {
+    "button": {
+      "primary": {
+        "default": {
+          "background": "#00D9A3",
+          "color": "#000000",
+          "padding": "12px 24px",
+          "radius": "4px",
+          "shadow": "none",
+          "border": "1px solid #00D9A3",
+          "fontWeight": 600,
+          "cursor": "pointer"
+        },
+        "hover": {
+          "background": "#00B88C",
+          "color": "#000000",
+          "shadow": "0 4px 12px rgba(0, 217, 163, 0.3)",
+          "transform": "translateY(-2px)"
+        },
+        "active": {
+          "background": "#009970",
+          "color": "#000000",
+          "shadow": "0 2px 6px rgba(0, 217, 163, 0.2)"
+        },
+        "disabled": {
+          "background": "#4D4D4D",
+          "color": "#808080",
+          "opacity": 0.6,
+          "cursor": "not-allowed"
+        },
+        "font": {
+          "size": "16px",
+          "weight": 600
+        }
+      },
+      "secondary": {
+        "default": {
+          "background": "transparent",
+          "color": "#00D9A3",
+          "padding": "12px 24px",
+          "radius": "4px",
+          "border": "1px solid #00D9A3",
+          "fontWeight": 500
+        },
+        "hover": {
+          "background": "rgba(0, 217, 163, 0.1)",
+          "color": "#00D9A3",
+          "shadow": "0 4px 12px rgba(0, 217, 163, 0.2)"
+        },
+        "active": {
+          "background": "rgba(0, 217, 163, 0.2)",
+          "color": "#00D9A3"
+        }
+      },
+      "tertiary": {
+        "default": {
+          "background": "transparent",
+          "color": "#D4D4D4",
+          "padding": "12px 24px",
+          "radius": "4px",
+          "border": "1px solid #2D2D2D",
+          "fontWeight": 400
+        },
+        "hover": {
+          "background": "#2D2D2D",
+          "color": "#D4D4D4",
+          "border": "1px solid #404040"
+        }
+      },
+      "sizes": {
+        "sm": "8px 16px, 14px font-size",
+        "md": "12px 24px, 16px font-size",
+        "lg": "16px 32px, 18px font-size"
+      }
+    },
+    "card": {
+      "default": {
+        "background": "#0A0A0A",
+        "border": "1px solid #2D2D2D",
+        "radius": "8px",
+        "padding": "24px",
+        "shadow": "0 2px 8px rgba(0, 0, 0, 0.4)"
+      },
+      "interactive": {
+        "background": "#0A0A0A",
+        "border": "1px solid #2D2D2D",
+        "transition": "all 200ms ease-out"
+      },
+      "interactiveHover": {
+        "background": "#1A1410",
+        "borderColor": "#00D9A3",
+        "shadow": "0 4px 12px rgba(0, 217, 163, 0.2)",
+        "transform": "translateY(-2px)"
+      }
+    },
+    "input": {
+      "default": {
+        "background": "#0A0A0A",
+        "border": "1px solid #2D2D2D",
+        "color": "#D4D4D4",
+        "padding": "12px 16px",
+        "radius": "4px",
+        "fontFamily": "Courier New, monospace",
+        "fontSize": "16px"
+      },
+      "focus": {
+        "background": "#0A0A0A",
+        "border": "1px solid #00D9A3",
+        "outline": "none",
+        "shadow": "0 0 0 3px rgba(0, 217, 163, 0.25)"
+      },
+      "disabled": {
+        "background": "#0A0A0A",
+        "border": "1px solid #1A1410",
+        "color": "#4D4D4D",
+        "opacity": 0.6
+      },
+      "placeholder": {
+        "color": "#4D4D4D"
+      }
+    },
+    "navbar": {
+      "default": {
+        "background": "#1A1410",
+        "height": "64px",
+        "padding": "0 32px",
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "space-between",
+        "borderBottom": "1px solid #2D2D2D"
+      },
+      "logo": {
+        "color": "#00D9A3",
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "fontFamily": "Courier New, monospace"
+      },
+      "nav-item": {
+        "color": "#D4D4D4",
+        "padding": "8px 16px",
+        "fontSize": "14px",
+        "textDecoration": "none",
+        "transition": "color 200ms ease-out"
+      },
+      "nav-item-hover": {
+        "color": "#00D9A3"
+      },
+      "nav-item-active": {
+        "color": "#00D9A3",
+        "borderBottom": "2px solid #00D9A3"
+      }
+    },
+    "modal": {
+      "overlay": {
+        "background": "rgba(0, 0, 0, 0.8)",
+        "zIndex": 1000
+      },
+      "content": {
+        "background": "#1A1410",
+        "border": "1px solid #2D2D2D",
+        "radius": "8px",
+        "padding": "32px",
+        "shadow": "0 8px 32px rgba(0, 0, 0, 0.8)",
+        "zIndex": 1001
+      },
+      "header": {
+        "fontSize": "24px",
+        "fontWeight": 700,
+        "color": "#D4D4D4",
+        "marginBottom": "24px"
+      },
+      "close": {
+        "background": "transparent",
+        "border": "none",
+        "color": "#808080",
+        "fontSize": "24px",
+        "cursor": "pointer",
+        "padding": "4px"
+      },
+      "closeHover": {
+        "color": "#00D9A3"
+      }
+    },
+    "code": {
+      "default": {
+        "background": "#0A0A0A",
+        "color": "#D4D4D4",
+        "fontFamily": "Courier New, monospace",
+        "fontSize": "14px",
+        "padding": "2px 6px",
+        "border": "1px solid #2D2D2D",
+        "radius": "3px"
+      },
+      "block": {
+        "background": "#0A0A0A",
+        "color": "#D4D4D4",
+        "padding": "16px",
+        "radius": "6px",
+        "border": "1px solid #2D2D2D",
+        "overflow": "auto"
+      }
+    },
+    "link": {
+      "default": {
+        "color": "#00D9A3",
+        "textDecoration": "none",
+        "cursor": "pointer"
+      },
+      "hover": {
+        "color": "#00B88C",
+        "textDecoration": "underline"
+      },
+      "visited": {
+        "color": "#00D9A3"
+      }
+    }
+  },
+  "layout": {
+    "breakpoints": {
+      "mobile": "0-639px",
+      "tablet": "640-1023px",
+      "desktop": "1024px+"
+    },
+    "containerMaxWidth": "1200px",
+    "gridColumns": 12,
+    "gutter": "24px",
+    "adaptiveBehavior": "Desktop-first layout with responsive grids. Typography scales down on mobile. Card layouts stack on tablet. Hero sections maintain aspect ratio on all screens."
+  },
+  "icons": {
+    "set": "Custom SVG set with terminal aesthetic",
+    "sizeDefault": "24px",
+    "sizes": {
+      "sm": "16px",
+      "md": "24px",
+      "lg": "32px",
+      "xl": "48px"
+    },
+    "strokeWidth": 2,
+    "logos": {
+      "logoLight": "Fresh text logo in cyan (#00D9A3)",
+      "logoDark": "Fresh text logo in cyan (#00D9A3) on dark background"
+    }
+  },
+  "animations": {
+    "duration": {
+      "fast": "150ms",
+      "normal": "300ms",
+      "slow": "500ms"
+    },
+    "easing": {
+      "standard": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "decelerate": "cubic-bezier(0.0, 0, 0.2, 1)",
+      "accelerate": "cubic-bezier(0.4, 0, 1, 1)",
+      "easeOut": "ease-out",
+      "easeInOut": "ease-in-out"
+    },
+    "keyframes": {
+      "fadeIn": "@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }",
+      "slideUp": "@keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }",
+      "slideDown": "@keyframes slideDown { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }",
+      "slideLeft": "@keyframes slideLeft { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }",
+      "slideRight": "@keyframes slideRight { from { transform: translateX(-20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }",
+      "pulse": "@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }",
+      "shimmer": "@keyframes shimmer { 0% { background-position: -1000px 0; } 100% { background-position: 1000px 0; } }"
+    },
+    "componentAnimations": {
+      "buttonHover": "transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1); &:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 217, 163, 0.3); }",
+      "cardHover": "transition: all 200ms ease-out; &:hover { transform: translateY(-4px); border-color: #00D9A3; box-shadow: 0 4px 12px rgba(0, 217, 163, 0.2); }",
+      "linkHover": "transition: color 200ms ease-out; &:hover { color: #00B88C; }",
+      "modalEntrance": "animation: slideUp 300ms cubic-bezier(0.0, 0, 0.2, 1);",
+      "focusRing": "outline: 2px solid #00D9A3; outline-offset: 2px;",
+      "loadingSpinner": "animation: spin 1s linear infinite;",
+      "skeletonLoading": "animation: shimmer 2s infinite;"
+    }
+  },
+  "motionInstructions": "All interactive elements use smooth transitions with cubic-bezier(0.4, 0, 0.2, 1) easing. Hover states lift elements 2-4px with cyan glow shadow. Focus rings use 3px cyan outline with 2px offset. Modals slide up on entrance with fadeIn. Loading states use pulse or spinner animations at 300ms or 1000ms intervals. Disabled states remove hover effects and reduce opacity to 60%. All animations respect prefers-reduced-motion media query.",
+  "darkMode": {
+    "enabled": true,
+    "overrides": {
+      "background": "#1A1410",
+      "surface": "#0A0A0A",
+      "textPrimary": "#D4D4D4",
+      "textSecondary": "#808080",
+      "border": "#2D2D2D"
+    }
+  },
+  "notes": "Terminal-inspired design system with dark brown/black color palette and bright cyan accent (#00D9A3). Heavy use of monospace fonts (Courier New) for authentic terminal aesthetic. Minimalist approach with clean typography and consistent spacing. Focus on readability with high contrast ratios. Interactive elements show visual feedback via hover states with cyan glow and subtle lift animations. Code blocks and syntax highlighting feature color-coded elements (magenta for keywords, cyan for functions, blue for types, green for strings). Glassmorphism avoided in favor of flat design with borders. All buttons feature smooth transitions and accessible focus states. Quote testimonial cards use left cyan border accent. Installation code blocks show copy-to-clipboard affordance."
+}
+
+{
+  "website": {
+    "url": "https://sinelaw.github.io/fresh/",
+    "analyzedAt": "2026-01-06",
+    "title": "Fresh - The Terminal Text Editor",
+    "description": "Fresh is a fast, modern terminal text editor with intuitive keybindings, syntax highlighting, and instant startup."
+  },
+  "baseFramework": {
+    "name": "Vanilla JS",
+    "version": "unknown",
+    "evidence": [
+      "No React/Vue/Angular/Svelte/Preact libraries detected",
+      "Plain JavaScript functions: copyCode(), detectOS(), updateInstallCommand()",
+      "Direct DOM manipulation with document.querySelector, getElementById"
+    ],
+    "ssrCompatible": false
+  },
+  "coreFramework": {
+    "name": "none",
+    "version": "unknown",
+    "evidence": [
+      "Static HTML file served from GitHub Pages",
+      "No Next.js, Nuxt, Astro, or similar meta-framework",
+      "Simple single-page landing site"
+    ],
+    "isSSR": false,
+    "isSSG": false,
+    "isClientOnly": true,
+    "renderingStrategyNotes": "Client-side only, static HTML with vanilla JavaScript enhancements"
+  },
+  "routing": {
+    "primary": "file-system only",
+    "evidence": [
+      "Single-page application",
+      "Anchor-based navigation (#features, #install)",
+      "Smooth scroll handled by vanilla JS event listeners on anchor links"
+    ],
+    "dynamicRoutes": false,
+    "nestedLayouts": false
+  },
+  "stylingSolution": {
+    "primary": "Vanilla CSS",
+    "secondary": [],
+    "version": "unknown",
+    "evidence": [
+      "Single <style> tag with 21,404 characters of CSS",
+      "CSS custom properties (--bg-dark, --accent-green, etc.)",
+      "No Tailwind, CSS-in-JS, or CSS Modules detected"
+    ],
+    "utilityFirst": false,
+    "darkModeStrategy": "manual-toggle via CSS variables for dark theme",
+    "designTokensPresent": true,
+    "designTokensFormat": "CSS variables (:root)"
+  },
+  "componentLibrary": {
+    "primary": "custom only",
+    "version": "unknown",
+    "customized": false,
+    "customizationMethod": "custom HTML/CSS components built from scratch",
+    "evidence": [
+      "nav-container, hero, feature-section, install-card, testimonial classes",
+      "No Shadcn/ui, Radix UI, Material UI, or other library components detected"
+    ],
+    "accessibility": "good",
+    "headless": false
+  },
+  "iconSet": {
+    "primary": "custom SVG",
+    "implementation": "inline SVG",
+    "version": "unknown",
+    "evidence": [
+      "GitHub icon rendered as inline <svg> in nav",
+      "No lucide-react, heroicons, or other icon library imports"
+    ]
+  },
+  "forms": {
+    "formHandling": "custom",
+    "validation": "none detected",
+    "evidence": [],
+    "serverSideValidation": false,
+    "notes": "No form handling; site is a landing page without user input forms"
+  },
+  "stateManagement": {
+    "primary": "none obvious",
+    "secondary": [],
+    "evidence": [
+      "Variables stored in global scope (installCommands object)",
+      "No state management library used"
+    ]
+  },
+  "dataFetching": {
+    "primary": "fetch + async/await",
+    "evidence": [
+      "fetch('https://api.github.com/repos/sinelaw/fresh/releases/latest')",
+      "Used to dynamically update version badge from GitHub releases"
+    ]
+  },
+  "uiAnimations": {
+    "primary": "CSS only",
+    "secondary": [],
+    "complexity": "basic",
+    "evidence": [
+      "@keyframes fadeInUp animation for hero and screenshot",
+      "CSS transitions on links and buttons (0.2s ease)",
+      "backdrop-filter: blur(10px) on nav"
+    ]
+  },
+  "backendAndApi": {
+    "apiType": "REST",
+    "dataFetchingClient": "native fetch",
+    "authentication": "none detected",
+    "cms": "none detected"
+  },
+  "infrastructure": {
+    "hosting": "GitHub Pages",
+    "cdn": "Cloudflare",
+    "analytics": [
+      "Cloudflare Web Analytics (beacon.min.js)"
+    ],
+    "monitoring": []
+  },
+  "performance": {
+    "imageOptimization": "none obvious",
+    "fonts": "system fonts + custom monospace stack (SF Mono, Cascadia Code, Fira Code, JetBrains Mono, etc.)",
+    "bundler": "none (static HTML file)"
+  },
+  "developerExperience": {
+    "lintingFormatting": [
+      "none obvious"
+    ],
+    "testing": [
+      "none obvious"
+    ],
+    "typeSafety": "JavaScript (no TypeScript)"
+  },
+  "otherNotableLibraries": [],
+  "packageManager": "none (static site)",
+  "typescript": false,
+  "thirdPartyServices": [
+    "Cloudflare Web Analytics",
+    "GitHub API (for version fetching)"
+  ],
+  "confidence": {
+    "overall": "very high",
+    "specificSections": "100% confidence on all technical stack details; site is a straightforward vanilla JS + HTML + CSS landing page served via GitHub Pages"
+  },
+  "notes": [
+    "This is a landing page for the Fresh terminal editor (Rust-based CLI tool), not a web application",
+    "All styling is custom vanilla CSS with CSS custom properties for theming",
+    "Dynamic version badge fetched from GitHub REST API",
+    "OS detection and installation command switching handled via vanilla JavaScript",
+    "Smooth scroll navigation implemented with vanilla JS event listeners",
+    "Copy-to-clipboard functionality implemented with Clipboard API",
+    "No build process, no bundler, no transpiler - pure static HTML/CSS/JS",
+    "Hosted on GitHub Pages with Cloudflare for analytics and CDN",
+    "Mobile responsive design via CSS media queries"
+  ]
+}
