@@ -15,43 +15,44 @@ pub const THEME_DRACULA: &str = "dracula";
 pub const THEME_NORD: &str = "nord";
 pub const THEME_SOLARIZED_DARK: &str = "solarized-dark";
 
-/// A builtin theme with its name and embedded JSON content.
+/// A builtin theme with its name, pack, and embedded JSON content.
 pub struct BuiltinTheme {
     pub name: &'static str,
+    /// Pack name (subdirectory path, empty for root themes)
+    pub pack: &'static str,
     pub json: &'static str,
 }
 
-/// All builtin themes embedded at compile time.
-pub const BUILTIN_THEMES: &[BuiltinTheme] = &[
-    BuiltinTheme {
-        name: THEME_DARK,
-        json: include_str!("../../../themes/dark.json"),
-    },
-    BuiltinTheme {
-        name: THEME_LIGHT,
-        json: include_str!("../../../themes/light.json"),
-    },
-    BuiltinTheme {
-        name: THEME_HIGH_CONTRAST,
-        json: include_str!("../../../themes/high-contrast.json"),
-    },
-    BuiltinTheme {
-        name: THEME_NOSTALGIA,
-        json: include_str!("../../../themes/nostalgia.json"),
-    },
-    BuiltinTheme {
-        name: THEME_DRACULA,
-        json: include_str!("../../../themes/dracula.json"),
-    },
-    BuiltinTheme {
-        name: THEME_NORD,
-        json: include_str!("../../../themes/nord.json"),
-    },
-    BuiltinTheme {
-        name: THEME_SOLARIZED_DARK,
-        json: include_str!("../../../themes/solarized-dark.json"),
-    },
-];
+// Include the auto-generated BUILTIN_THEMES array from build.rs
+include!(concat!(env!("OUT_DIR"), "/builtin_themes.rs"));
+
+/// Information about an available theme.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThemeInfo {
+    /// Theme name (e.g., "dark", "nord")
+    pub name: String,
+    /// Pack name (subdirectory path, empty for root themes)
+    pub pack: String,
+}
+
+impl ThemeInfo {
+    /// Create a new ThemeInfo
+    pub fn new(name: impl Into<String>, pack: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            pack: pack.into(),
+        }
+    }
+
+    /// Get display name showing pack if present
+    pub fn display_name(&self) -> String {
+        if self.pack.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{} ({})", self.name, self.pack)
+        }
+    }
+}
 
 /// Convert a ratatui Color to RGB values.
 /// Returns None for Reset or Indexed colors.
@@ -347,6 +348,9 @@ pub struct UiColors {
     /// Popup selected item background
     #[serde(default = "default_popup_selection_bg")]
     pub popup_selection_bg: ColorDef,
+    /// Popup selected item text color
+    #[serde(default = "default_popup_selection_fg")]
+    pub popup_selection_fg: ColorDef,
     /// Popup window text color
     #[serde(default = "default_popup_text_fg")]
     pub popup_text_fg: ColorDef,
@@ -543,6 +547,9 @@ fn default_popup_bg() -> ColorDef {
 }
 fn default_popup_selection_bg() -> ColorDef {
     ColorDef::Rgb(58, 79, 120)
+}
+fn default_popup_selection_fg() -> ColorDef {
+    ColorDef::Rgb(255, 255, 255) // White text on selected popup item
 }
 fn default_popup_text_fg() -> ColorDef {
     ColorDef::Named("White".to_string())
@@ -837,6 +844,7 @@ pub struct Theme {
     pub popup_border_fg: Color,
     pub popup_bg: Color,
     pub popup_selection_bg: Color,
+    pub popup_selection_fg: Color,
     pub popup_text_fg: Color,
 
     pub suggestion_bg: Color,
@@ -963,6 +971,7 @@ impl From<ThemeFile> for Theme {
             popup_border_fg: file.ui.popup_border_fg.into(),
             popup_bg: file.ui.popup_bg.into(),
             popup_selection_bg: file.ui.popup_selection_bg.into(),
+            popup_selection_fg: file.ui.popup_selection_fg.into(),
             popup_text_fg: file.ui.popup_text_fg.into(),
             suggestion_bg: file.ui.suggestion_bg.into(),
             suggestion_selected_bg: file.ui.suggestion_selected_bg.into(),
@@ -1065,6 +1074,7 @@ impl From<Theme> for ThemeFile {
                 popup_border_fg: theme.popup_border_fg.into(),
                 popup_bg: theme.popup_bg.into(),
                 popup_selection_bg: theme.popup_selection_bg.into(),
+                popup_selection_fg: theme.popup_selection_fg.into(),
                 popup_text_fg: theme.popup_text_fg.into(),
                 suggestion_bg: theme.suggestion_bg.into(),
                 suggestion_selected_bg: theme.suggestion_selected_bg.into(),

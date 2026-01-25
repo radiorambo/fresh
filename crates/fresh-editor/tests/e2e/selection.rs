@@ -913,13 +913,13 @@ fn test_select_word_with_dot() {
 }
 
 /// Test expand selection (Ctrl+Shift+Right) when cursor is on a non-word character
-/// Should select from cursor position through the next word (like Emacs)
+/// From punctuation, Ctrl+Right consumes all punctuation and stops at word boundary
 #[test]
 fn test_expand_selection_on_non_word_char() {
     use crossterm::event::{KeyCode, KeyModifiers};
     let mut harness = EditorTestHarness::new(80, 24).unwrap();
 
-    // Test case from user: cursor on first * in "**-word"
+    // Test case: cursor on first * in "**-word"
     harness.type_text("**-word").unwrap();
     harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
 
@@ -931,7 +931,7 @@ fn test_expand_selection_on_non_word_char() {
     let cursor = harness.editor().active_state().cursors.primary();
     let range = cursor.selection_range();
 
-    // Should select from cursor (position 0) through next word, which is "**-word"
+    // Should select punctuation only: "**-" (stops at word boundary)
     assert!(
         range.is_some(),
         "Should have a selection after Ctrl+Shift+Right"
@@ -943,8 +943,8 @@ fn test_expand_selection_on_non_word_char() {
             .active_state_mut()
             .get_text_range(range.start, range.end);
         assert_eq!(
-            selected_text, "**-word",
-            "Should select from cursor through end of next word"
+            selected_text, "**-",
+            "Should select punctuation only (stops at word boundary)"
         );
     }
 }
@@ -1554,6 +1554,533 @@ fn test_select_page_up_down_combination() {
     );
 }
 
+// =============================================================================
+// Ctrl+Left/Right Word Jump Tests
+// =============================================================================
+//
+// Word jump behavior:
+// - Ctrl+Right: jump to END of current word, then to end of next word
+// - Ctrl+Left: jump to BEGINNING of current word, then to beginning of previous word
+// - Ctrl+Shift+Left/Right: same movement pattern but extends selection
+//
+// Key properties tested:
+// 1. Ctrl+Right from anywhere in a word -> end of that word
+// 2. Ctrl+Left from anywhere in a word -> beginning of that word
+// 3. Movement is symmetric: jumping right N times then left N times returns to start
+// 4. Selection variants move to the same positions as non-selection variants
+
+/// Property test: Ctrl+Right should jump to end of current word
+/// From any position within a word, Ctrl+Right lands at the word's end.
+/// From whitespace/punctuation, it lands at end of next token.
+#[test]
+fn test_ctrl_right_jumps_to_word_end() {
+    // Test 1: Simple words with spaces
+    // "hello world test"
+    //  01234 56789A BCDEF  (positions in hex-ish for clarity)
+    {
+        let text = "hello world test";
+        let expected_destinations: Vec<(usize, usize)> = vec![
+            (0, 5),   // from 'h' -> end of "hello"
+            (1, 5),   // from 'e' -> end of "hello"
+            (2, 5),   // from 'l' -> end of "hello"
+            (3, 5),   // from 'l' -> end of "hello"
+            (4, 5),   // from 'o' -> end of "hello"
+            (5, 11),  // from space -> end of "world"
+            (6, 11),  // from 'w' -> end of "world"
+            (7, 11),  // from 'o' -> end of "world"
+            (8, 11),  // from 'r' -> end of "world"
+            (9, 11),  // from 'l' -> end of "world"
+            (10, 11), // from 'd' -> end of "world"
+            (11, 16), // from space -> end of "test"
+            (12, 16), // from 't' -> end of "test"
+            (13, 16), // from 'e' -> end of "test"
+            (14, 16), // from 's' -> end of "test"
+            (15, 16), // from 't' -> end of "test"
+            (16, 16), // from end -> stay at end
+        ];
+
+        for (start_pos, expected_end) in expected_destinations {
+            let mut harness = EditorTestHarness::new(80, 24).unwrap();
+            harness.type_text(text).unwrap();
+            harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+            for _ in 0..start_pos {
+                harness
+                    .send_key(KeyCode::Right, KeyModifiers::NONE)
+                    .unwrap();
+            }
+            assert_eq!(harness.cursor_position(), start_pos);
+
+            harness
+                .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+                .unwrap();
+
+            assert_eq!(
+                harness.cursor_position(),
+                expected_end,
+                "Simple text: from position {}, Ctrl+Right should jump to {} (got {})",
+                start_pos,
+                expected_end,
+                harness.cursor_position()
+            );
+        }
+    }
+
+    // Test 2: Multiline with punctuation before newline
+    // "bla::{\n   next"
+    // Positions: b=0, l=1, a=2, :=3, :=4, {=5, \n=6, ' '=7, ' '=8, ' '=9, n=10, e=11, x=12, t=13
+    // From after "bla" (position 3, on ':'), Ctrl+Right should stop at end of line (position 6)
+    {
+        let text = "bla::{\n   next";
+        let expected_destinations: Vec<(usize, usize)> = vec![
+            (0, 3),   // from 'b' -> end of "bla"
+            (1, 3),   // from 'l' -> end of "bla"
+            (2, 3),   // from 'a' -> end of "bla"
+            (3, 6),   // from ':' -> end of punctuation "::{" (before newline)
+            (4, 6),   // from ':' -> end of punctuation "::{" (before newline)
+            (5, 6),   // from '{' -> end of punctuation (before newline)
+            (6, 14),  // from newline -> skip whitespace, end of "next"
+            (7, 14),  // from space -> end of "next"
+            (8, 14),  // from space -> end of "next"
+            (9, 14),  // from space -> end of "next"
+            (10, 14), // from 'n' -> end of "next"
+            (11, 14), // from 'e' -> end of "next"
+            (12, 14), // from 'x' -> end of "next"
+            (13, 14), // from 't' -> end of "next"
+            (14, 14), // from end -> stay at end
+        ];
+
+        for (start_pos, expected_end) in expected_destinations {
+            let mut harness = EditorTestHarness::new(80, 24).unwrap();
+            harness.type_text(text).unwrap();
+            harness
+                .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+                .unwrap();
+
+            for _ in 0..start_pos {
+                harness
+                    .send_key(KeyCode::Right, KeyModifiers::NONE)
+                    .unwrap();
+            }
+            assert_eq!(harness.cursor_position(), start_pos);
+
+            harness
+                .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+                .unwrap();
+
+            assert_eq!(
+                harness.cursor_position(),
+                expected_end,
+                "Multiline: from position {}, Ctrl+Right should jump to {} (got {})",
+                start_pos,
+                expected_end,
+                harness.cursor_position()
+            );
+        }
+    }
+}
+
+/// Property test: Ctrl+Left should jump to beginning of current word
+/// From any position within a word, Ctrl+Left lands at the word's beginning.
+/// From whitespace/punctuation, it lands at beginning of previous token.
+#[test]
+fn test_ctrl_left_jumps_to_word_beginning() {
+    // Test 1: Simple words with spaces
+    // "hello world test"
+    {
+        let text = "hello world test";
+        let expected_destinations: Vec<(usize, usize)> = vec![
+            (0, 0),   // from start -> stay at start
+            (1, 0),   // from 'e' -> start of "hello"
+            (2, 0),   // from 'l' -> start of "hello"
+            (3, 0),   // from 'l' -> start of "hello"
+            (4, 0),   // from 'o' -> start of "hello"
+            (5, 0),   // from space -> start of "hello"
+            (6, 0),   // from 'w' (start of word) -> start of "hello"
+            (7, 6),   // from 'o' -> start of "world"
+            (8, 6),   // from 'r' -> start of "world"
+            (9, 6),   // from 'l' -> start of "world"
+            (10, 6),  // from 'd' -> start of "world"
+            (11, 6),  // from space -> start of "world"
+            (12, 6),  // from 't' (start of word) -> start of "world"
+            (13, 12), // from 'e' -> start of "test"
+            (14, 12), // from 's' -> start of "test"
+            (15, 12), // from 't' -> start of "test"
+            (16, 12), // from end -> start of "test"
+        ];
+
+        for (start_pos, expected_end) in expected_destinations {
+            let mut harness = EditorTestHarness::new(80, 24).unwrap();
+            harness.type_text(text).unwrap();
+            harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+            for _ in 0..start_pos {
+                harness
+                    .send_key(KeyCode::Right, KeyModifiers::NONE)
+                    .unwrap();
+            }
+            assert_eq!(harness.cursor_position(), start_pos);
+
+            harness
+                .send_key(KeyCode::Left, KeyModifiers::CONTROL)
+                .unwrap();
+
+            assert_eq!(
+                harness.cursor_position(),
+                expected_end,
+                "Simple text: from position {}, Ctrl+Left should jump to {} (got {})",
+                start_pos,
+                expected_end,
+                harness.cursor_position()
+            );
+        }
+    }
+
+    // Test 2: Multiline with punctuation before newline
+    // "bla::{\n   next"
+    // Positions: b=0, l=1, a=2, :=3, :=4, {=5, \n=6, ' '=7, ' '=8, ' '=9, n=10, e=11, x=12, t=13
+    // From "next" on second line, Ctrl+Left should navigate back across lines
+    {
+        let text = "bla::{\n   next";
+        let expected_destinations: Vec<(usize, usize)> = vec![
+            (0, 0),   // from 'b' -> stay at start
+            (1, 0),   // from 'l' -> start of "bla"
+            (2, 0),   // from 'a' -> start of "bla"
+            (3, 0),   // from ':' -> start of "bla"
+            (4, 3),   // from ':' -> start of punctuation "::"
+            (5, 3),   // from '{' -> start of punctuation "::"
+            (6, 3),   // from newline -> start of punctuation
+            (7, 3),   // from space -> start of punctuation (skips whitespace)
+            (8, 3),   // from space -> start of punctuation
+            (9, 3),   // from space -> start of punctuation
+            (10, 3),  // from 'n' (start of "next") -> start of punctuation
+            (11, 10), // from 'e' -> start of "next"
+            (12, 10), // from 'x' -> start of "next"
+            (13, 10), // from 't' -> start of "next"
+            (14, 10), // from end -> start of "next"
+        ];
+
+        for (start_pos, expected_end) in expected_destinations {
+            let mut harness = EditorTestHarness::new(80, 24).unwrap();
+            harness.type_text(text).unwrap();
+            harness
+                .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+                .unwrap();
+
+            for _ in 0..start_pos {
+                harness
+                    .send_key(KeyCode::Right, KeyModifiers::NONE)
+                    .unwrap();
+            }
+            assert_eq!(harness.cursor_position(), start_pos);
+
+            harness
+                .send_key(KeyCode::Left, KeyModifiers::CONTROL)
+                .unwrap();
+
+            assert_eq!(
+                harness.cursor_position(),
+                expected_end,
+                "Multiline: from position {}, Ctrl+Left should jump to {} (got {})",
+                start_pos,
+                expected_end,
+                harness.cursor_position()
+            );
+        }
+    }
+}
+
+/// Property test: Word jump should be reversible (roundtrip)
+/// Jumping right N times then left N times should return to the starting position.
+/// Note: Ctrl+Right goes to word ENDS, Ctrl+Left goes to word STARTS, so they
+/// visit different intermediate positions, but the roundtrip should work.
+#[test]
+fn test_word_jump_symmetry() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.type_text("one two three four five").unwrap();
+    harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+    let start_position = harness.cursor_position();
+    assert_eq!(start_position, 0);
+
+    // Jump right 5 times (through all words)
+    for _ in 0..5 {
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+    }
+    let end_position = harness.cursor_position();
+    assert_eq!(
+        end_position, 23,
+        "Should be at end of text after 5 Ctrl+Right"
+    );
+
+    // Jump left 5 times (back through all words)
+    for _ in 0..5 {
+        harness
+            .send_key(KeyCode::Left, KeyModifiers::CONTROL)
+            .unwrap();
+    }
+    let final_position = harness.cursor_position();
+
+    // Should return to start
+    assert_eq!(
+        final_position, start_position,
+        "Jumping right then left should return to start position"
+    );
+}
+
+/// Property test: Ctrl+Shift+Left/Right should move to same positions as Ctrl+Left/Right
+/// The only difference is that the selection variant maintains/extends selection.
+#[test]
+fn test_selection_movement_matches_regular_movement() {
+    // Test 1: Simple single-line text
+    {
+        let text = "alpha beta gamma delta";
+
+        let mut harness1 = EditorTestHarness::new(80, 24).unwrap();
+        harness1.type_text(text).unwrap();
+        harness1
+            .send_key(KeyCode::Home, KeyModifiers::NONE)
+            .unwrap();
+
+        let mut harness2 = EditorTestHarness::new(80, 24).unwrap();
+        harness2.type_text(text).unwrap();
+        harness2
+            .send_key(KeyCode::Home, KeyModifiers::NONE)
+            .unwrap();
+
+        for i in 0..4 {
+            harness1
+                .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+                .unwrap();
+            harness2
+                .send_key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+                .unwrap();
+
+            assert_eq!(
+                harness1.cursor_position(),
+                harness2.cursor_position(),
+                "Simple text: After {} Ctrl+Right jumps, positions should match",
+                i + 1
+            );
+        }
+    }
+
+    // Test 2: Multiline text with punctuation before newline
+    // This is the critical case: "bla::{\n   next"
+    // From after "bla", both Ctrl+Right and Ctrl+Shift+Right should stop at position 6 (end of line)
+    {
+        let text = "bla::{\n   next";
+
+        let mut harness1 = EditorTestHarness::new(80, 24).unwrap();
+        harness1.type_text(text).unwrap();
+        harness1
+            .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+            .unwrap();
+
+        let mut harness2 = EditorTestHarness::new(80, 24).unwrap();
+        harness2.type_text(text).unwrap();
+        harness2
+            .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+            .unwrap();
+
+        // First jump: from 'b' to end of "bla" (position 3)
+        harness1
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        harness2
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+            .unwrap();
+
+        assert_eq!(
+            harness1.cursor_position(),
+            harness2.cursor_position(),
+            "Multiline: After 1st jump, Ctrl+Right ({}) and Ctrl+Shift+Right ({}) should match",
+            harness1.cursor_position(),
+            harness2.cursor_position()
+        );
+
+        // Second jump: from ':' to end of punctuation (position 6, before newline)
+        harness1
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        harness2
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+            .unwrap();
+
+        assert_eq!(
+            harness1.cursor_position(),
+            harness2.cursor_position(),
+            "Multiline: After 2nd jump (punctuation), Ctrl+Right ({}) and Ctrl+Shift+Right ({}) should match - both should stop at end of line",
+            harness1.cursor_position(),
+            harness2.cursor_position()
+        );
+
+        // Third jump: from newline to end of "next" (position 14)
+        harness1
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        harness2
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+            .unwrap();
+
+        assert_eq!(
+            harness1.cursor_position(),
+            harness2.cursor_position(),
+            "Multiline: After 3rd jump, Ctrl+Right ({}) and Ctrl+Shift+Right ({}) should match",
+            harness1.cursor_position(),
+            harness2.cursor_position()
+        );
+    }
+
+    // Test 3: Ctrl+Left vs Ctrl+Shift+Left
+    {
+        let text = "alpha beta gamma delta";
+
+        let mut harness3 = EditorTestHarness::new(80, 24).unwrap();
+        harness3.type_text(text).unwrap();
+
+        let mut harness4 = EditorTestHarness::new(80, 24).unwrap();
+        harness4.type_text(text).unwrap();
+
+        for i in 0..4 {
+            harness3
+                .send_key(KeyCode::Left, KeyModifiers::CONTROL)
+                .unwrap();
+            harness4
+                .send_key(KeyCode::Left, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+                .unwrap();
+
+            assert_eq!(
+                harness3.cursor_position(),
+                harness4.cursor_position(),
+                "After {} Ctrl+Left jumps, positions should match",
+                i + 1
+            );
+        }
+
+        // Verify selection is actually created with Shift variant
+        assert!(
+            harness4.has_selection(),
+            "Ctrl+Shift+Left should create selection"
+        );
+    }
+}
+
+/// Sanity test: Known text with explicit expected positions for word navigation
+/// This test uses concrete values to clearly document the desired behavior.
+#[test]
+fn test_word_navigation_sanity() {
+    // Test 1: Simple words with spaces - "hello world test"
+    // Positions: h=0, e=1, l=2, l=3, o=4, space=5, w=6, o=7, r=8, l=9, d=10, space=11, t=12...
+    {
+        let mut harness = EditorTestHarness::new(80, 24).unwrap();
+        harness.type_text("hello world test").unwrap();
+        harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+        // From 'h' (position 0), jump to end of "hello" (position 5)
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(harness.cursor_position(), 5, "From word start to word end");
+
+        // From space (position 5), jump to end of "world" (position 11)
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(
+            harness.cursor_position(),
+            11,
+            "From whitespace to next word end"
+        );
+    }
+
+    // Test 2: Punctuation behavior - "event::{ thing"
+    // Positions: e=0, v=1, e=2, n=3, t=4, :=5, :=6, {=7, space=8, t=9, h=10, i=11, n=12, g=13
+    // From after "event" (on ":"), Ctrl+Right should stop after all punctuation "::{" (position 8)
+    {
+        let mut harness = EditorTestHarness::new(80, 24).unwrap();
+        harness.type_text("event::{ thing").unwrap();
+        harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+        // From 'e' (position 0), jump to end of "event" (position 5)
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(harness.cursor_position(), 5, "From word to end of word");
+
+        // From ':' (position 5), jump to end of punctuation "::{" (position 8)
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(
+            harness.cursor_position(),
+            8,
+            "From punctuation to end of punctuation run"
+        );
+
+        // From space (position 8), jump to end of "thing" (position 14)
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(
+            harness.cursor_position(),
+            14,
+            "From whitespace to end of next word"
+        );
+    }
+
+    // Test 3: Ctrl+Left behavior
+    {
+        let mut harness = EditorTestHarness::new(80, 24).unwrap();
+        harness.type_text("alpha beta").unwrap();
+        // Cursor is at end (position 10)
+
+        // From end, jump to start of "beta" (position 6)
+        harness
+            .send_key(KeyCode::Left, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(
+            harness.cursor_position(),
+            6,
+            "From end to start of last word"
+        );
+
+        // From start of "beta", jump to start of "alpha" (position 0)
+        harness
+            .send_key(KeyCode::Left, KeyModifiers::CONTROL)
+            .unwrap();
+        assert_eq!(
+            harness.cursor_position(),
+            0,
+            "From word start to previous word start"
+        );
+    }
+
+    // Test 4: Ctrl+Shift+Right selection
+    {
+        let mut harness = EditorTestHarness::new(80, 24).unwrap();
+        harness.type_text("foo bar").unwrap();
+        harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+        // Ctrl+Shift+Right should select "foo"
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+            .unwrap();
+        assert_eq!(harness.cursor_position(), 3);
+        let selected = harness.get_selected_text();
+        assert_eq!(selected, "foo", "Should select first word");
+
+        // Continue - should extend selection to include " bar"
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+            .unwrap();
+        let selected = harness.get_selected_text();
+        assert_eq!(selected, "foo bar", "Should extend selection to next word");
+    }
+}
+
 /// Test that selection works correctly at file boundaries
 #[test]
 fn test_select_at_file_boundaries() {
@@ -1594,4 +2121,111 @@ fn test_select_at_file_boundaries() {
     let _selected = harness.get_selected_text();
     // Just verify we can get selected text without panicking
     // The test validates that boundary operations don't crash
+}
+
+// =============================================================================
+// Ctrl+D (Add Cursor at Next Match) Tests
+// =============================================================================
+
+/// Test that Ctrl+D selects the entire current word when cursor is in the middle
+/// This matches behavior in other editors like VSCode
+#[test]
+fn test_ctrl_d_selects_entire_word_from_middle() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    // Text with repeated word "hello"
+    harness.type_text("hello world hello").unwrap();
+    harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+    // Move cursor to middle of "hello" (position 2, on 'l')
+    harness
+        .send_key(KeyCode::Right, KeyModifiers::NONE)
+        .unwrap();
+    harness
+        .send_key(KeyCode::Right, KeyModifiers::NONE)
+        .unwrap();
+    assert_eq!(harness.cursor_position(), 2);
+
+    // Press Ctrl+D - should select the ENTIRE word "hello", not just "llo"
+    harness
+        .send_key(KeyCode::Char('d'), KeyModifiers::CONTROL)
+        .unwrap();
+
+    let selected = harness.get_selected_text();
+    assert_eq!(
+        selected, "hello",
+        "Ctrl+D from middle of word should select entire word 'hello', not just from cursor"
+    );
+}
+
+/// Test that Ctrl+D finds next match after selecting current word
+#[test]
+fn test_ctrl_d_finds_next_match() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.type_text("foo bar foo baz foo").unwrap();
+    harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+    // First Ctrl+D should select "foo"
+    harness
+        .send_key(KeyCode::Char('d'), KeyModifiers::CONTROL)
+        .unwrap();
+    let selected = harness.get_selected_text();
+    assert_eq!(selected, "foo", "First Ctrl+D should select 'foo'");
+
+    // Second Ctrl+D should add cursor at next "foo" (position 8)
+    harness
+        .send_key(KeyCode::Char('d'), KeyModifiers::CONTROL)
+        .unwrap();
+
+    // Should now have 2 cursors, both selecting "foo"
+    let cursor_count = harness.cursor_count();
+    assert_eq!(cursor_count, 2, "Should have 2 cursors after second Ctrl+D");
+}
+
+/// Test that Ctrl+D works correctly when cursor is at word start
+#[test]
+fn test_ctrl_d_at_word_start() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.type_text("test word test").unwrap();
+    harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+    // Cursor is at start of "test" (position 0)
+    assert_eq!(harness.cursor_position(), 0);
+
+    // Ctrl+D should select entire word "test"
+    harness
+        .send_key(KeyCode::Char('d'), KeyModifiers::CONTROL)
+        .unwrap();
+
+    let selected = harness.get_selected_text();
+    assert_eq!(
+        selected, "test",
+        "Ctrl+D at word start should select 'test'"
+    );
+}
+
+/// Test that Ctrl+D works correctly when cursor is at word end
+#[test]
+fn test_ctrl_d_at_word_end() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.type_text("word test word").unwrap();
+    harness.send_key(KeyCode::Home, KeyModifiers::NONE).unwrap();
+
+    // Move to end of "word" (position 4)
+    for _ in 0..4 {
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::NONE)
+            .unwrap();
+    }
+    assert_eq!(harness.cursor_position(), 4);
+
+    // Ctrl+D should select entire word "word" (going backward to include the whole word)
+    harness
+        .send_key(KeyCode::Char('d'), KeyModifiers::CONTROL)
+        .unwrap();
+
+    let selected = harness.get_selected_text();
+    assert_eq!(
+        selected, "word",
+        "Ctrl+D at word end should select entire 'word'"
+    );
 }

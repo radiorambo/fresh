@@ -227,6 +227,7 @@ pub enum Action {
     MoveDown,
     MoveWordLeft,
     MoveWordRight,
+    MoveWordEnd, // Move to end of current word
     MoveLineStart,
     MoveLineEnd,
     MovePageUp,
@@ -241,6 +242,7 @@ pub enum Action {
     SelectDown,
     SelectWordLeft,
     SelectWordRight,
+    SelectWordEnd, // Select to end of current word
     SelectLineStart,
     SelectLineEnd,
     SelectDocumentStart,
@@ -575,6 +577,7 @@ impl Action {
             "move_down" => Self::MoveDown,
             "move_word_left" => Self::MoveWordLeft,
             "move_word_right" => Self::MoveWordRight,
+            "move_word_end" => Self::MoveWordEnd,
             "move_line_start" => Self::MoveLineStart,
             "move_line_end" => Self::MoveLineEnd,
             "move_page_up" => Self::MovePageUp,
@@ -588,6 +591,7 @@ impl Action {
             "select_down" => Self::SelectDown,
             "select_word_left" => Self::SelectWordLeft,
             "select_word_right" => Self::SelectWordRight,
+            "select_word_end" => Self::SelectWordEnd,
             "select_line_start" => Self::SelectLineStart,
             "select_line_end" => Self::SelectLineEnd,
             "select_document_start" => Self::SelectDocumentStart,
@@ -1524,6 +1528,7 @@ impl KeybindingResolver {
             Action::MoveDown => t!("action.move_down"),
             Action::MoveWordLeft => t!("action.move_word_left"),
             Action::MoveWordRight => t!("action.move_word_right"),
+            Action::MoveWordEnd => t!("action.move_word_end"),
             Action::MoveLineStart => t!("action.move_line_start"),
             Action::MoveLineEnd => t!("action.move_line_end"),
             Action::MovePageUp => t!("action.move_page_up"),
@@ -1536,6 +1541,7 @@ impl KeybindingResolver {
             Action::SelectDown => t!("action.select_down"),
             Action::SelectWordLeft => t!("action.select_word_left"),
             Action::SelectWordRight => t!("action.select_word_right"),
+            Action::SelectWordEnd => t!("action.select_word_end"),
             Action::SelectLineStart => t!("action.select_line_start"),
             Action::SelectLineEnd => t!("action.select_line_end"),
             Action::SelectDocumentStart => t!("action.select_document_start"),
@@ -2390,5 +2396,51 @@ mod tests {
             ctrl_shift_h_equivs.is_empty(),
             "Ctrl+Shift+H should NOT map to Ctrl+Shift+Backspace"
         );
+    }
+
+    #[test]
+    fn test_no_duplicate_keybindings_in_keymaps() {
+        // Load all keymaps and check for duplicate bindings within the same context
+        // A duplicate is when the same key+modifiers+context is defined more than once
+        use std::collections::HashMap;
+
+        let keymaps: &[(&str, &str)] = &[
+            ("default", include_str!("../../keymaps/default.json")),
+            ("macos", include_str!("../../keymaps/macos.json")),
+        ];
+
+        for (keymap_name, json_content) in keymaps {
+            let keymap: crate::config::KeymapConfig = serde_json::from_str(json_content)
+                .unwrap_or_else(|e| panic!("Failed to parse keymap '{}': {}", keymap_name, e));
+
+            // Track seen bindings per context: (key, modifiers, context) -> action
+            let mut seen: HashMap<(String, Vec<String>, String), String> = HashMap::new();
+            let mut duplicates: Vec<String> = Vec::new();
+
+            for binding in &keymap.bindings {
+                let when = binding.when.clone().unwrap_or_default();
+                let key_id = (binding.key.clone(), binding.modifiers.clone(), when.clone());
+
+                if let Some(existing_action) = seen.get(&key_id) {
+                    duplicates.push(format!(
+                        "Duplicate in '{}': key='{}', modifiers={:?}, when='{}' -> '{}' vs '{}'",
+                        keymap_name,
+                        binding.key,
+                        binding.modifiers,
+                        when,
+                        existing_action,
+                        binding.action
+                    ));
+                } else {
+                    seen.insert(key_id, binding.action.clone());
+                }
+            }
+
+            assert!(
+                duplicates.is_empty(),
+                "Found duplicate keybindings:\n{}",
+                duplicates.join("\n")
+            );
+        }
     }
 }
