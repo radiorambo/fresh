@@ -8,15 +8,15 @@ Fresh's functionality can be extended with plugins written in TypeScript. Fresh 
 
 > On macOS, plugins folder needs to live either in the same directory as the binary OR in the directory that fresh is run from. If installed via homebrew, the binary lives in ```/opt/homebrew/bin/fresh```. The simplest, cleanest way to to create a symbolic link in that folder pointing to your plugins. i.e. ``` ln -s /Users/username/freshplugins /opt/homebrew/bin/plugins```
 
-### Package Manager
+## Package Manager
 
 Fresh includes a built-in package manager for installing plugins, themes, and language packs from the [official registry](https://github.com/sinelaw/fresh-plugins-registry) or any git repository. See [fresh-plugins](https://github.com/sinelaw/fresh-plugins) for example packages you can use as templates.
 
-#### Opening the Package Manager
+### Opening the Package Manager
 
 Use the command palette (`Ctrl+P >`) and search for "Package Manager" to open the package browser. You can filter by package type (Plugins, Themes, Languages) and search for packages by name.
 
-#### Package Types
+### Package Types
 
 | Type | Description |
 |------|-------------|
@@ -24,7 +24,7 @@ Use the command palette (`Ctrl+P >`) and search for "Package Manager" to open th
 | **Themes** | Custom color schemes and styling |
 | **Language packs** | Syntax highlighting, language settings, and LSP configuration for new languages |
 
-#### Commands
+### Commands
 
 Use the command palette (`Ctrl+P >`) and search for:
 
@@ -34,7 +34,7 @@ Use the command palette (`Ctrl+P >`) and search for:
 | `pkg: Install from URL` | Install directly from any git repository URL |
 | `pkg: Update All` | Update all installed packages |
 
-#### Installing from Git URL
+### Installing from Git URL
 
 Any git repository can be installed directly:
 
@@ -51,7 +51,7 @@ https://github.com/user/fresh-plugins#packages/rainbow-brackets
 
 This installs only the `packages/rainbow-brackets` directory from the repository.
 
-#### Package Locations
+### Package Locations
 
 Installed packages are stored in:
 - **Plugins:** `~/.config/fresh/plugins/packages/`
@@ -59,7 +59,7 @@ Installed packages are stored in:
 
 Each package is a git repository, so you can update manually with `git pull` if needed.
 
-#### Registry Sources
+### Registry Sources
 
 By default, Fresh uses the official package registry. You can add additional registries in your config:
 
@@ -76,6 +76,6 @@ By default, Fresh uses the official package registry. You can add additional reg
 
 Run `pkg: Sync Registry` to fetch the latest package lists.
 
-### Clangd helper plugin
+## Clangd helper plugin
 
 Fresh ships `plugins/clangd_support.ts` with the source tree; see `plugins/clangd_support.md` for an overview of the plugin commands and how it surfaces clangd-specific notifications in the status bar.
