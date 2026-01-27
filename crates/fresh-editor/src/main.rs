@@ -11,7 +11,7 @@ use fresh::services::terminal_modes::{self, KeyboardConfig, TerminalModes};
 use fresh::services::tracing_setup;
 use fresh::{
     app::Editor, config, config_io::DirectoryContext, model::filesystem::StdFileSystem,
-    services::release_checker, services::signal_handler, services::warning_log::WarningLogHandle,
+    services::release_checker, services::signal_handler, services::tracing_setup::TracingHandles,
 };
 use ratatui::Terminal;
 use std::{
@@ -74,9 +74,9 @@ struct Args {
     #[arg(long, value_name = "PLUGIN_PATH")]
     check_plugin: Option<PathBuf>,
 
-    /// Validate a theme file against the strict schema (rejects unknown fields)
-    #[arg(long, value_name = "PATH")]
-    validate_theme: Option<PathBuf>,
+    /// Initialize a new package (plugin, theme, or language pack)
+    #[arg(long, value_name = "TYPE")]
+    init: Option<Option<String>>,
 }
 
 /// Parsed file location from CLI argument in file:line:col format
@@ -95,7 +95,7 @@ struct IterationOutcome {
 
 struct SetupState {
     config: config::Config,
-    warning_log_handle: Option<WarningLogHandle>,
+    tracing_handles: Option<TracingHandles>,
     terminal: Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>,
     terminal_size: (u16, u16),
     file_locations: Vec<FileLocation>,
@@ -250,7 +250,7 @@ fn handle_first_run_setup(
     file_locations: &[FileLocation],
     show_file_explorer: bool,
     stdin_stream: &mut Option<StdinStreamState>,
-    warning_log_handle: &mut Option<WarningLogHandle>,
+    tracing_handles: &mut Option<TracingHandles>,
     session_enabled: bool,
 ) -> AnyhowResult<()> {
     if let Some(log_path) = &args.event_log {
@@ -258,8 +258,9 @@ fn handle_first_run_setup(
         editor.enable_event_streaming(log_path)?;
     }
 
-    if let Some(handle) = warning_log_handle.take() {
-        editor.set_warning_log(handle.receiver, handle.path);
+    if let Some(handles) = tracing_handles.take() {
+        editor.set_warning_log(handles.warning.receiver, handles.warning.path);
+        editor.set_status_log_path(handles.status.path);
     }
 
     if session_enabled {
@@ -416,7 +417,7 @@ fn initialize_app(args: &Args) -> AnyhowResult<SetupState> {
         .log_file
         .clone()
         .unwrap_or_else(fresh::services::log_dirs::main_log_path);
-    let warning_log_handle = tracing_setup::init_global(&log_file);
+    let tracing_handles = tracing_setup::init_global(&log_file);
 
     // Clean up stale log files from dead processes on startup
     fresh::services::log_dirs::cleanup_stale_logs();
@@ -574,7 +575,7 @@ fn initialize_app(args: &Args) -> AnyhowResult<SetupState> {
 
     Ok(SetupState {
         config,
-        warning_log_handle,
+        tracing_handles,
         terminal,
         terminal_size: (size.width, size.height),
         file_locations,
@@ -669,41 +670,562 @@ fn check_plugin_bundle(plugin_path: &std::path::Path) -> AnyhowResult<()> {
     Ok(())
 }
 
-/// Validate a theme file and print results
-fn validate_theme_command(theme_path: &std::path::Path) -> AnyhowResult<()> {
-    use fresh::view::theme::{validate_theme_file, ValidationErrorKind};
+/// Initialize a new Fresh package (plugin, theme, or language pack)
+fn init_package_command(package_type: Option<String>) -> AnyhowResult<()> {
+    use std::io::{BufRead, Write};
 
-    eprintln!("Validating theme: {}", theme_path.display());
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout();
 
-    match validate_theme_file(theme_path) {
-        Ok(result) => {
-            if result.is_valid {
-                let theme_name = theme_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("theme");
-                println!("Theme '{}' is valid.", theme_name);
-                Ok(())
-            } else {
-                eprintln!("\nValidation errors:");
-                for error in &result.errors {
-                    let kind_str = match error.kind {
-                        ValidationErrorKind::UnknownField => "[unknown field]",
-                        ValidationErrorKind::TypeMismatch => "[type mismatch]",
-                        ValidationErrorKind::MissingField => "[missing field]",
-                        ValidationErrorKind::Other => "[error]",
-                    };
-                    eprintln!("  {} {}: {}", kind_str, error.path, error.message);
-                }
-                eprintln!("\nFound {} error(s).", result.errors.len());
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("Error reading theme file: {}", e);
+    // Helper to prompt for input
+    let mut prompt = |msg: &str| -> String {
+        print!("{}", msg);
+        let _ = stdout.flush();
+        let mut input = String::new();
+        stdin.lock().read_line(&mut input).unwrap_or_default();
+        input.trim().to_string()
+    };
+
+    println!("Fresh Package Initializer");
+    println!("=========================\n");
+
+    // Determine package type
+    let pkg_type = match package_type.as_deref() {
+        Some("plugin") | Some("p") => "plugin",
+        Some("theme") | Some("t") => "theme",
+        Some("language") | Some("lang") | Some("l") => "language",
+        Some(other) => {
+            eprintln!(
+                "Unknown package type '{}'. Valid types: plugin, theme, language",
+                other
+            );
             std::process::exit(1);
         }
+        None => {
+            println!("Package types:");
+            println!("  1. plugin   - Extend Fresh with custom commands and functionality");
+            println!("  2. theme    - Custom color schemes and styling");
+            println!("  3. language - Syntax highlighting, LSP, and language configuration\n");
+
+            loop {
+                let choice = prompt("Select type (1/2/3 or plugin/theme/language): ");
+                match choice.as_str() {
+                    "1" | "plugin" | "p" => break "plugin",
+                    "2" | "theme" | "t" => break "theme",
+                    "3" | "language" | "lang" | "l" => break "language",
+                    "" => {
+                        eprintln!("Please select a package type.");
+                    }
+                    _ => {
+                        eprintln!("Invalid choice. Please enter 1, 2, 3, or the type name.");
+                    }
+                }
+            }
+        }
+    };
+
+    // Get package name
+    let default_name = format!("my-fresh-{}", pkg_type);
+    let name = loop {
+        let input = prompt(&format!("Package name [{}]: ", default_name));
+        let name = if input.is_empty() {
+            default_name.clone()
+        } else {
+            input
+        };
+
+        // Validate name (lowercase, alphanumeric, dashes)
+        if name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && !name.starts_with('-')
+            && !name.ends_with('-')
+        {
+            break name;
+        }
+        eprintln!("Invalid name. Use lowercase letters, numbers, and dashes only.");
+    };
+
+    // Get description
+    let description = prompt("Description (optional): ");
+
+    // Get author
+    let author = prompt("Author (optional): ");
+
+    // Create directory
+    let pkg_dir = PathBuf::from(&name);
+    if pkg_dir.exists() {
+        eprintln!("Error: Directory '{}' already exists.", name);
+        std::process::exit(1);
     }
+
+    std::fs::create_dir_all(&pkg_dir)?;
+
+    // Generate files based on package type
+    match pkg_type {
+        "plugin" => create_plugin_package(&pkg_dir, &name, &description, &author)?,
+        "theme" => create_theme_package(&pkg_dir, &name, &description, &author)?,
+        "language" => create_language_package(&pkg_dir, &name, &description, &author)?,
+        _ => unreachable!(),
+    }
+
+    println!("\nPackage '{}' created successfully!", name);
+    println!("\nNext steps:");
+    println!("  1. cd {}", name);
+    match pkg_type {
+        "plugin" => {
+            println!("  2. Edit plugin.ts to add your functionality");
+            println!("  3. Test locally: fresh --check-plugin .");
+            println!("  4. Validate manifest: ./validate.sh");
+        }
+        "theme" => {
+            println!("  2. Edit theme.json to customize colors");
+            println!("  3. Validate theme: ./validate.sh (requires: pip install jsonschema)");
+        }
+        "language" => {
+            println!("  2. Add your grammar file to grammars/");
+            println!("  3. Edit package.json to configure LSP and formatting");
+            println!("  4. Validate manifest: ./validate.sh");
+        }
+        _ => unreachable!(),
+    }
+    println!("\nTo publish:");
+    println!("  1. Push your package to a public Git repository");
+    println!("  2. Submit a PR to: https://github.com/sinelaw/fresh-plugins-registry");
+    println!("     Add your package to the appropriate registry file:");
+    match pkg_type {
+        "plugin" => println!("     - plugins.json"),
+        "theme" => println!("     - themes.json"),
+        "language" => println!("     - languages.json"),
+        _ => unreachable!(),
+    }
+    println!("\nDocumentation: https://github.com/sinelaw/fresh-plugins-registry#readme");
+
+    Ok(())
+}
+
+/// Write a validation script that checks package.json against the official schema
+fn write_validate_script(dir: &PathBuf) -> AnyhowResult<()> {
+    let validate_sh = r#"#!/bin/bash
+# Validate package.json against the official Fresh package schema
+#
+# Prerequisite: pip install jsonschema
+curl -sSL https://raw.githubusercontent.com/sinelaw/fresh/main/scripts/validate-package.sh | bash
+"#;
+    write_script_file(dir, "validate.sh", validate_sh)
+}
+
+/// Write a validation script for themes (validates both package.json and theme.json)
+fn write_theme_validate_script(dir: &PathBuf) -> AnyhowResult<()> {
+    let validate_sh = r#"#!/bin/bash
+# Validate Fresh theme package
+#
+# Prerequisite: pip install jsonschema
+set -e
+
+echo "Validating package.json..."
+curl -sSL https://raw.githubusercontent.com/sinelaw/fresh/main/scripts/validate-package.sh | bash
+
+echo "Validating theme.json..."
+python3 -c "
+import json, jsonschema, urllib.request, sys
+
+with open('theme.json') as f:
+    data = json.load(f)
+
+schema_url = 'https://raw.githubusercontent.com/sinelaw/fresh/main/crates/fresh-editor/plugins/schemas/theme.schema.json'
+try:
+    with urllib.request.urlopen(schema_url, timeout=5) as resp:
+        schema = json.load(resp)
+    jsonschema.validate(data, schema)
+    print('✓ theme.json is valid')
+except urllib.error.URLError:
+    print('⚠ Could not fetch schema (URL may not exist yet)')
+except jsonschema.ValidationError as e:
+    print(f'✗ Validation error: {e.message}')
+    sys.exit(1)
+"
+"#;
+    write_script_file(dir, "validate.sh", validate_sh)
+}
+
+fn write_script_file(dir: &PathBuf, name: &str, content: &str) -> AnyhowResult<()> {
+    std::fs::write(dir.join(name), content)?;
+
+    // Make executable on Unix
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(dir.join(name))?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(dir.join(name), perms)?;
+    }
+
+    Ok(())
+}
+
+fn create_plugin_package(
+    dir: &PathBuf,
+    name: &str,
+    description: &str,
+    author: &str,
+) -> AnyhowResult<()> {
+    // package.json
+    let package_json = format!(
+        r#"{{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/main/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "{}",
+  "version": "0.1.0",
+  "description": "{}",
+  "type": "plugin",
+  "author": "{}",
+  "license": "MIT",
+  "fresh": {{
+    "main": "plugin.ts"
+  }}
+}}
+"#,
+        name,
+        if description.is_empty() {
+            format!("A Fresh plugin")
+        } else {
+            description.to_string()
+        },
+        author
+    );
+    std::fs::write(dir.join("package.json"), package_json)?;
+
+    // validate.sh
+    write_validate_script(dir)?;
+
+    // plugin.ts
+    let plugin_ts = r#"// Fresh Plugin
+// Documentation: https://github.com/user/fresh/blob/main/docs/plugins.md
+
+// Register a command that users can invoke
+editor.registerCommand("hello", "Say Hello", async () => {
+  editor.showStatusMessage("Hello from your plugin!");
+});
+
+// React to editor events
+editor.on("buffer_opened", (event) => {
+  const info = editor.getBufferInfo();
+  if (info) {
+    console.log(`Opened: ${info.path}`);
+  }
+});
+
+// Example: Add a keybinding in your Fresh config:
+// {
+//   "keyBindings": {
+//     "ctrl+alt+h": "command:hello"
+//   }
+// }
+"#;
+    std::fs::write(dir.join("plugin.ts"), plugin_ts)?;
+
+    // README.md
+    let readme = format!(
+        r#"# {}
+
+{}
+
+## Installation
+
+Install via Fresh's package manager:
+```
+:pkg install {}
+```
+
+Or install from this repository:
+```
+:pkg install https://github.com/YOUR_USERNAME/{}
+```
+
+## Usage
+
+This plugin adds the following commands:
+- `hello` - Say Hello
+
+## License
+
+MIT
+"#,
+        name,
+        if description.is_empty() {
+            "A Fresh plugin."
+        } else {
+            description
+        },
+        name,
+        name
+    );
+    std::fs::write(dir.join("README.md"), readme)?;
+
+    Ok(())
+}
+
+fn create_theme_package(
+    dir: &PathBuf,
+    name: &str,
+    description: &str,
+    author: &str,
+) -> AnyhowResult<()> {
+    // package.json
+    let package_json = format!(
+        r#"{{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/main/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "{}",
+  "version": "0.1.0",
+  "description": "{}",
+  "type": "theme",
+  "author": "{}",
+  "license": "MIT",
+  "fresh": {{
+    "theme": "theme.json"
+  }}
+}}
+"#,
+        name,
+        if description.is_empty() {
+            format!("A Fresh theme")
+        } else {
+            description.to_string()
+        },
+        author
+    );
+    std::fs::write(dir.join("package.json"), package_json)?;
+
+    // validate.sh - validates both package.json and theme.json
+    write_theme_validate_script(dir)?;
+
+    // theme.json - minimal theme with essential colors
+    let theme_json = r##"{
+  "name": "My Theme",
+  "colors": {
+    "background": "#1e1e2e",
+    "foreground": "#cdd6f4",
+    "cursor": "#f5e0dc",
+    "selection": "#45475a",
+    "line_numbers": "#6c7086",
+    "current_line": "#313244",
+    "status_bar": {
+      "background": "#181825",
+      "foreground": "#cdd6f4"
+    },
+    "syntax": {
+      "keyword": "#cba6f7",
+      "string": "#a6e3a1",
+      "number": "#fab387",
+      "comment": "#6c7086",
+      "function": "#89b4fa",
+      "type": "#f9e2af",
+      "variable": "#cdd6f4",
+      "operator": "#89dceb"
+    }
+  }
+}
+"##;
+    std::fs::write(dir.join("theme.json"), theme_json)?;
+
+    // README.md
+    let readme = format!(
+        r#"# {}
+
+{}
+
+## Installation
+
+Install via Fresh's package manager:
+```
+:pkg install {}
+```
+
+## Activation
+
+After installation, activate the theme:
+```
+:theme {}
+```
+
+Or add to your Fresh config:
+```json
+{{
+  "theme": "{}"
+}}
+```
+
+## Preview
+
+<!-- Add a screenshot of your theme here -->
+
+## License
+
+MIT
+"#,
+        name,
+        if description.is_empty() {
+            "A Fresh theme."
+        } else {
+            description
+        },
+        name,
+        name,
+        name
+    );
+    std::fs::write(dir.join("README.md"), readme)?;
+
+    Ok(())
+}
+
+fn create_language_package(
+    dir: &PathBuf,
+    name: &str,
+    description: &str,
+    author: &str,
+) -> AnyhowResult<()> {
+    // Create grammars directory
+    std::fs::create_dir_all(dir.join("grammars"))?;
+
+    // package.json
+    let package_json = format!(
+        r#"{{
+  "$schema": "https://raw.githubusercontent.com/sinelaw/fresh/main/crates/fresh-editor/plugins/schemas/package.schema.json",
+  "name": "{}",
+  "version": "0.1.0",
+  "description": "{}",
+  "type": "language",
+  "author": "{}",
+  "license": "MIT",
+  "fresh": {{
+    "grammar": {{
+      "file": "grammars/syntax.tmLanguage.json",
+      "extensions": ["ext"]
+    }},
+    "language": {{
+      "commentPrefix": "//",
+      "tabSize": 4,
+      "autoIndent": true
+    }},
+    "lsp": {{
+      "command": "language-server",
+      "args": ["--stdio"],
+      "autoStart": true
+    }}
+  }}
+}}
+"#,
+        name,
+        if description.is_empty() {
+            format!("Language support for Fresh")
+        } else {
+            description.to_string()
+        },
+        author
+    );
+    std::fs::write(dir.join("package.json"), package_json)?;
+
+    // validate.sh
+    write_validate_script(dir)?;
+
+    // Minimal TextMate grammar template
+    let grammar = r#"{
+  "name": "My Language",
+  "scopeName": "source.mylang",
+  "fileTypes": ["ext"],
+  "patterns": [
+    {
+      "name": "comment.line",
+      "match": "//.*$"
+    },
+    {
+      "name": "string.quoted.double",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape",
+          "match": "\\\\."
+        }
+      ]
+    },
+    {
+      "name": "constant.numeric",
+      "match": "\\b[0-9]+\\b"
+    },
+    {
+      "name": "keyword.control",
+      "match": "\\b(if|else|while|for|return)\\b"
+    }
+  ]
+}
+"#;
+    std::fs::write(dir.join("grammars/syntax.tmLanguage.json"), grammar)?;
+
+    // README.md
+    let readme = format!(
+        r#"# {}
+
+{}
+
+## Features
+
+- Syntax highlighting via TextMate grammar
+- Language configuration (comments, indentation)
+- LSP integration (if configured)
+
+## Installation
+
+Install via Fresh's package manager:
+```
+:pkg install {}
+```
+
+## Configuration
+
+This language pack provides:
+
+### Grammar
+- File extensions: `.ext` (update in package.json)
+- Syntax highlighting rules in `grammars/syntax.tmLanguage.json`
+
+### Language Settings
+- Comment prefix: `//`
+- Tab size: 4 spaces
+- Auto-indent: enabled
+
+### LSP Server
+- Command: `language-server --stdio`
+- Auto-start: enabled
+
+Update `package.json` to match your language's requirements.
+
+## Development
+
+1. Edit `grammars/syntax.tmLanguage.json` for syntax highlighting
+2. Update `package.json` with correct file extensions and LSP command
+3. Test by installing locally
+
+## Resources
+
+- [TextMate Grammar Guide](https://macromates.com/manual/en/language_grammars)
+- [VS Code Language Extension Guide](https://code.visualstudio.com/api/language-extensions/syntax-highlight-guide)
+
+## License
+
+MIT
+"#,
+        name,
+        if description.is_empty() {
+            "Language support for Fresh."
+        } else {
+            description
+        },
+        name
+    );
+    std::fs::write(dir.join("README.md"), readme)?;
+
+    Ok(())
 }
 
 fn main() -> AnyhowResult<()> {
@@ -759,14 +1281,14 @@ fn main() -> AnyhowResult<()> {
         return check_plugin_bundle(plugin_path);
     }
 
-    // Handle --validate-theme early (no terminal setup needed)
-    if let Some(theme_path) = &args.validate_theme {
-        return validate_theme_command(theme_path);
+    // Handle --init early (no terminal setup needed)
+    if let Some(ref pkg_type) = args.init {
+        return init_package_command(pkg_type.clone());
     }
 
     let SetupState {
         config,
-        mut warning_log_handle,
+        mut tracing_handles,
         mut terminal,
         terminal_size,
         file_locations,
@@ -827,7 +1349,7 @@ fn main() -> AnyhowResult<()> {
                 &file_locations,
                 show_file_explorer,
                 &mut stdin_stream,
-                &mut warning_log_handle,
+                &mut tracing_handles,
                 session_enabled,
             )
             .context("Failed first run setup")?;

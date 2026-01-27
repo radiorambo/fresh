@@ -13,6 +13,7 @@ use crate::model::event::{SplitDirection, SplitId};
 use crate::services::plugins::hooks::HookArgs;
 use crate::view::popup_mouse::{popup_areas_to_layout_info, PopupHitTester};
 use crate::view::prompt::PromptType;
+use crate::view::ui::tabs::TabHit;
 use anyhow::Result as AnyhowResult;
 use rust_i18n::t;
 
@@ -91,6 +92,12 @@ impl Editor {
             row
         );
 
+        // Check if we should forward mouse events to the terminal
+        // Forward if: in terminal mode, mouse is over terminal buffer, and terminal is in alternate screen mode
+        if let Some(result) = self.try_forward_mouse_to_terminal(col, row, mouse_event) {
+            return result;
+        }
+
         match mouse_event.kind {
             MouseEventKind::Down(MouseButton::Left) => {
                 if is_double_click {
@@ -99,7 +106,7 @@ impl Editor {
                     needs_render = true;
                     return Ok(needs_render);
                 }
-                self.handle_mouse_click(col, row)?;
+                self.handle_mouse_click(col, row, mouse_event.modifiers)?;
                 needs_render = true;
             }
             MouseEventKind::Drag(MouseButton::Left) => {
@@ -657,36 +664,19 @@ impl Editor {
         }
 
         // Check menu bar (row 0, only when visible)
-        if self.menu_bar_visible && row == 0 {
-            let all_menus: Vec<crate::config::Menu> = self
-                .menus
-                .menus
-                .iter()
-                .chain(self.menu_state.plugin_menus.iter())
-                .cloned()
-                .collect();
-
-            if let Some(menu_idx) = self.menu_state.get_menu_at_position(&all_menus, col) {
-                return Some(HoverTarget::MenuBarItem(menu_idx));
+        // Check menu bar using cached layout from previous render
+        if self.menu_bar_visible {
+            if let Some(ref menu_layout) = self.cached_layout.menu_layout {
+                if let Some(menu_idx) = menu_layout.menu_at(col, row) {
+                    return Some(HoverTarget::MenuBarItem(menu_idx));
+                }
             }
         }
 
         // Check menu dropdown items if a menu is open (including submenus)
         if let Some(active_idx) = self.menu_state.active_menu {
-            let all_menus: Vec<crate::config::Menu> = self
-                .menus
-                .menus
-                .iter()
-                .chain(self.menu_state.plugin_menus.iter())
-                .cloned()
-                .collect();
-
-            if let Some(menu) = all_menus.get(active_idx) {
-                if let Some(hover) =
-                    self.compute_menu_dropdown_hover(col, row, menu, active_idx, &all_menus)
-                {
-                    return Some(hover);
-                }
+            if let Some(hover) = self.compute_menu_dropdown_hover(col, row, active_idx) {
+                return Some(hover);
             }
         }
 
@@ -770,16 +760,18 @@ impl Editor {
             }
         }
 
-        for (split_id, buffer_id, tab_row, start_col, end_col, close_start) in
-            &self.cached_layout.tab_areas
-        {
-            if row == *tab_row && col >= *start_col && col < *end_col {
-                // Check if hovering over the close button
-                if col >= *close_start {
-                    return Some(HoverTarget::TabCloseButton(*buffer_id, *split_id));
+        for (split_id, tab_layout) in &self.cached_layout.tab_layouts {
+            match tab_layout.hit_test(col, row) {
+                Some(TabHit::CloseButton(buffer_id)) => {
+                    return Some(HoverTarget::TabCloseButton(buffer_id, *split_id));
                 }
-                // Otherwise, return TabName for hover effect on tab name
-                return Some(HoverTarget::TabName(*buffer_id, *split_id));
+                Some(TabHit::TabName(buffer_id)) => {
+                    return Some(HoverTarget::TabName(buffer_id, *split_id));
+                }
+                Some(TabHit::ScrollLeft)
+                | Some(TabHit::ScrollRight)
+                | Some(TabHit::BarBackground)
+                | None => {}
             }
         }
 
@@ -976,7 +968,12 @@ impl Editor {
         Ok(())
     }
     /// Handle mouse click (down event)
-    pub(super) fn handle_mouse_click(&mut self, col: u16, row: u16) -> AnyhowResult<()> {
+    pub(super) fn handle_mouse_click(
+        &mut self,
+        col: u16,
+        row: u16,
+        modifiers: crossterm::event::KeyModifiers,
+    ) -> AnyhowResult<()> {
         // Check if click is on tab context menu first
         if self.tab_context_menu.is_some() {
             if let Some(result) = self.handle_tab_context_menu_click(col, row) {
@@ -1163,30 +1160,25 @@ impl Editor {
             return Ok(());
         }
 
-        // Check if click is on menu bar (row 0, only when visible)
-        if self.menu_bar_visible && row == 0 {
-            let all_menus: Vec<crate::config::Menu> = self
-                .menus
-                .menus
-                .iter()
-                .chain(self.menu_state.plugin_menus.iter())
-                .cloned()
-                .collect();
-
-            if let Some(menu_idx) = self.menu_state.get_menu_at_position(&all_menus, col) {
-                // Toggle menu: if same menu is open, close it; otherwise open clicked menu
-                if self.menu_state.active_menu == Some(menu_idx) {
+        // Check if click is on menu bar using cached layout
+        if self.menu_bar_visible {
+            if let Some(ref menu_layout) = self.cached_layout.menu_layout {
+                if let Some(menu_idx) = menu_layout.menu_at(col, row) {
+                    // Toggle menu: if same menu is open, close it; otherwise open clicked menu
+                    if self.menu_state.active_menu == Some(menu_idx) {
+                        self.close_menu_with_auto_hide();
+                    } else {
+                        // Dismiss transient popups and clear hover state when opening menu
+                        self.on_editor_focus_lost();
+                        self.menu_state.open_menu(menu_idx);
+                    }
+                    return Ok(());
+                } else if row == 0 {
+                    // Clicked on menu bar background but not on a menu label - close any open menu
                     self.close_menu_with_auto_hide();
-                } else {
-                    // Dismiss transient popups and clear hover state when opening menu
-                    self.on_editor_focus_lost();
-                    self.menu_state.open_menu(menu_idx);
+                    return Ok(());
                 }
-            } else {
-                // Clicked on menu bar but not on a menu label - close any open menu
-                self.close_menu_with_auto_hide();
             }
-            return Ok(());
         }
 
         // Check if click is on an open menu dropdown
@@ -1201,9 +1193,7 @@ impl Editor {
 
             if let Some(menu) = all_menus.get(active_idx) {
                 // Handle click on menu dropdown chain (including submenus)
-                if let Some(click_result) =
-                    self.handle_menu_dropdown_click(col, row, menu, active_idx, &all_menus)?
-                {
+                if let Some(click_result) = self.handle_menu_dropdown_click(col, row, menu)? {
                     return click_result;
                 }
             }
@@ -1296,6 +1286,15 @@ impl Editor {
                 {
                     if row == warn_row && col >= warn_start && col < warn_end {
                         return self.handle_action(Action::ShowWarnings);
+                    }
+                }
+
+                // Check message area - click opens status log
+                if let Some((msg_row, msg_start, msg_end)) =
+                    self.cached_layout.status_bar_message_area
+                {
+                    if row == msg_row && col >= msg_start && col < msg_end {
+                        return self.handle_action(Action::ShowStatusLog);
                     }
                 }
             }
@@ -1414,34 +1413,71 @@ impl Editor {
             return Ok(());
         }
 
-        // Check if click is on a tab using cached hit areas (computed during rendering)
-        let tab_click = self.cached_layout.tab_areas.iter().find_map(
-            |(split_id, buffer_id, tab_row, start_col, end_col, close_start)| {
-                if row == *tab_row && col >= *start_col && col < *end_col {
-                    let is_close_button = col >= *close_start;
-                    Some((*split_id, *buffer_id, is_close_button))
-                } else {
-                    None
-                }
-            },
-        );
-
-        if let Some((split_id, clicked_buffer, clicked_close)) = tab_click {
-            self.focus_split(split_id, clicked_buffer);
-
-            // Handle close button click - use close_tab logic
-            if clicked_close {
-                self.close_tab_in_split(clicked_buffer, split_id);
-                return Ok(());
-            }
-
-            // Start potential tab drag (will only become active after moving threshold)
-            self.mouse_state.dragging_tab = Some(super::types::TabDragState::new(
-                clicked_buffer,
+        // Check if click is on a tab using cached tab layouts (computed during rendering)
+        // Debug: show tab layout info
+        for (split_id, tab_layout) in &self.cached_layout.tab_layouts {
+            tracing::debug!(
+                "Tab layout for split {:?}: bar_area={:?}, left_scroll={:?}, right_scroll={:?}",
                 split_id,
-                (col, row),
-            ));
-            return Ok(());
+                tab_layout.bar_area,
+                tab_layout.left_scroll_area,
+                tab_layout.right_scroll_area
+            );
+        }
+
+        let tab_hit = self
+            .cached_layout
+            .tab_layouts
+            .iter()
+            .find_map(|(split_id, tab_layout)| {
+                let hit = tab_layout.hit_test(col, row);
+                tracing::debug!(
+                    "Tab hit_test at ({}, {}) for split {:?} returned {:?}",
+                    col,
+                    row,
+                    split_id,
+                    hit
+                );
+                hit.map(|h| (*split_id, h))
+            });
+
+        if let Some((split_id, hit)) = tab_hit {
+            match hit {
+                TabHit::CloseButton(buffer_id) => {
+                    self.focus_split(split_id, buffer_id);
+                    self.close_tab_in_split(buffer_id, split_id);
+                    return Ok(());
+                }
+                TabHit::TabName(buffer_id) => {
+                    self.focus_split(split_id, buffer_id);
+                    // Start potential tab drag (will only become active after moving threshold)
+                    self.mouse_state.dragging_tab = Some(super::types::TabDragState::new(
+                        buffer_id,
+                        split_id,
+                        (col, row),
+                    ));
+                    return Ok(());
+                }
+                TabHit::ScrollLeft => {
+                    // Scroll tabs left by one tab width (use 5 chars as estimate)
+                    self.set_status_message("ScrollLeft clicked!".to_string());
+                    if let Some(view_state) = self.split_view_states.get_mut(&split_id) {
+                        view_state.tab_scroll_offset =
+                            view_state.tab_scroll_offset.saturating_sub(10);
+                    }
+                    return Ok(());
+                }
+                TabHit::ScrollRight => {
+                    // Scroll tabs right by one tab width (use 5 chars as estimate)
+                    self.set_status_message("ScrollRight clicked!".to_string());
+                    if let Some(view_state) = self.split_view_states.get_mut(&split_id) {
+                        view_state.tab_scroll_offset =
+                            view_state.tab_scroll_offset.saturating_add(10);
+                    }
+                    return Ok(());
+                }
+                TabHit::BarBackground => {}
+            }
         }
 
         // Check if click is in editor content area
@@ -1469,7 +1505,14 @@ impl Editor {
             {
                 // Click in editor - focus split and position cursor
                 tracing::debug!("  -> HIT! calling handle_editor_click");
-                self.handle_editor_click(col, row, *split_id, *buffer_id, *content_rect)?;
+                self.handle_editor_click(
+                    col,
+                    row,
+                    *split_id,
+                    *buffer_id,
+                    *content_rect,
+                    modifiers,
+                )?;
                 return Ok(());
             }
         }
@@ -1776,17 +1819,17 @@ impl Editor {
         }
 
         // Check if right-click is on a tab
-        let tab_click = self.cached_layout.tab_areas.iter().find_map(
-            |(split_id, buffer_id, tab_row, start_col, end_col, _close_start)| {
-                if row == *tab_row && col >= *start_col && col < *end_col {
-                    Some((*split_id, *buffer_id))
-                } else {
-                    None
-                }
-            },
-        );
+        let tab_hit =
+            self.cached_layout.tab_layouts.iter().find_map(
+                |(split_id, tab_layout)| match tab_layout.hit_test(col, row) {
+                    Some(TabHit::TabName(buffer_id) | TabHit::CloseButton(buffer_id)) => {
+                        Some((*split_id, buffer_id))
+                    }
+                    _ => None,
+                },
+            );
 
-        if let Some((split_id, buffer_id)) = tab_click {
+        if let Some((split_id, buffer_id)) = tab_hit {
             // Open tab context menu
             self.tab_context_menu = Some(TabContextMenu::new(buffer_id, split_id, col, row + 1));
         } else {

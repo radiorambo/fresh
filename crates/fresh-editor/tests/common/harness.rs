@@ -718,6 +718,28 @@ impl EditorTestHarness {
         Ok(())
     }
 
+    /// Simulate a shift+click at specific coordinates (for extending selection)
+    pub fn mouse_shift_click(&mut self, col: u16, row: u16) -> anyhow::Result<()> {
+        let mouse_event = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::SHIFT,
+        };
+        self.send_mouse(mouse_event)?;
+
+        // Also send the release event
+        let mouse_up = MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: col,
+            row,
+            modifiers: KeyModifiers::SHIFT,
+        };
+        self.send_mouse(mouse_up)?;
+        self.render()?;
+        Ok(())
+    }
+
     /// Simulate a mouse move (hover) at specific coordinates
     pub fn mouse_move(&mut self, col: u16, row: u16) -> anyhow::Result<()> {
         let mouse_event = MouseEvent {

@@ -308,6 +308,8 @@ pub enum Action {
     Revert,
     ToggleAutoRevert,
     FormatBuffer,
+    TrimTrailingWhitespace,
+    EnsureFinalNewline,
 
     // Navigation
     GotoLine,
@@ -357,9 +359,12 @@ pub enum Action {
     ShowHelp,
     ShowKeyboardShortcuts,
     ShowWarnings,
+    ShowStatusLog,
     ShowLspStatus,
     ClearWarnings,
-    CommandPalette,
+    CommandPalette, // TODO: Consider dropping this now that we have QuickOpen
+    /// Quick Open - unified prompt with prefix-based provider routing
+    QuickOpen,
     ToggleLineWrap,
     ToggleComposeMode,
     SetComposeWidth,
@@ -695,9 +700,11 @@ impl Action {
             "show_help" => Self::ShowHelp,
             "keyboard_shortcuts" => Self::ShowKeyboardShortcuts,
             "show_warnings" => Self::ShowWarnings,
+            "show_status_log" => Self::ShowStatusLog,
             "show_lsp_status" => Self::ShowLspStatus,
             "clear_warnings" => Self::ClearWarnings,
             "command_palette" => Self::CommandPalette,
+            "quick_open" => Self::QuickOpen,
             "toggle_line_wrap" => Self::ToggleLineWrap,
             "toggle_compose_mode" => Self::ToggleComposeMode,
             "set_compose_width" => Self::SetComposeWidth,
@@ -863,6 +870,70 @@ impl Action {
 
             _ => return None,
         })
+    }
+
+    /// Check if this action is a movement or editing action that should be
+    /// ignored in virtual buffers with hidden cursors.
+    pub fn is_movement_or_editing(&self) -> bool {
+        matches!(
+            self,
+            // Movement actions
+            Action::MoveLeft
+                | Action::MoveRight
+                | Action::MoveUp
+                | Action::MoveDown
+                | Action::MoveWordLeft
+                | Action::MoveWordRight
+                | Action::MoveWordEnd
+                | Action::MoveLineStart
+                | Action::MoveLineEnd
+                | Action::MovePageUp
+                | Action::MovePageDown
+                | Action::MoveDocumentStart
+                | Action::MoveDocumentEnd
+                // Selection actions
+                | Action::SelectLeft
+                | Action::SelectRight
+                | Action::SelectUp
+                | Action::SelectDown
+                | Action::SelectWordLeft
+                | Action::SelectWordRight
+                | Action::SelectWordEnd
+                | Action::SelectLineStart
+                | Action::SelectLineEnd
+                | Action::SelectDocumentStart
+                | Action::SelectDocumentEnd
+                | Action::SelectPageUp
+                | Action::SelectPageDown
+                | Action::SelectAll
+                | Action::SelectWord
+                | Action::SelectLine
+                | Action::ExpandSelection
+                // Block selection
+                | Action::BlockSelectLeft
+                | Action::BlockSelectRight
+                | Action::BlockSelectUp
+                | Action::BlockSelectDown
+                // Editing actions
+                | Action::InsertChar(_)
+                | Action::InsertNewline
+                | Action::InsertTab
+                | Action::DeleteBackward
+                | Action::DeleteForward
+                | Action::DeleteWordBackward
+                | Action::DeleteWordForward
+                | Action::DeleteLine
+                | Action::DeleteToLineEnd
+                | Action::DeleteToLineStart
+                | Action::TransposeChars
+                | Action::OpenLine
+                // Clipboard editing (but not Copy)
+                | Action::Cut
+                | Action::Paste
+                // Undo/Redo
+                | Action::Undo
+                | Action::Redo
+        )
     }
 }
 
@@ -1074,6 +1145,7 @@ impl KeybindingResolver {
             action,
             // Global UI actions
             Action::CommandPalette
+                | Action::QuickOpen
                 | Action::OpenSettings
                 | Action::MenuActivate
                 | Action::MenuOpen(_)
@@ -1592,6 +1664,8 @@ impl KeybindingResolver {
             Action::Revert => t!("action.revert"),
             Action::ToggleAutoRevert => t!("action.toggle_auto_revert"),
             Action::FormatBuffer => t!("action.format_buffer"),
+            Action::TrimTrailingWhitespace => t!("action.trim_trailing_whitespace"),
+            Action::EnsureFinalNewline => t!("action.ensure_final_newline"),
             Action::GotoLine => t!("action.goto_line"),
             Action::GoToMatchingBracket => t!("action.goto_matching_bracket"),
             Action::JumpToNextError => t!("action.jump_to_next_error"),
@@ -1625,9 +1699,11 @@ impl KeybindingResolver {
             Action::ShowHelp => t!("action.show_help"),
             Action::ShowKeyboardShortcuts => t!("action.show_keyboard_shortcuts"),
             Action::ShowWarnings => t!("action.show_warnings"),
+            Action::ShowStatusLog => t!("action.show_status_log"),
             Action::ShowLspStatus => t!("action.show_lsp_status"),
             Action::ClearWarnings => t!("action.clear_warnings"),
             Action::CommandPalette => t!("action.command_palette"),
+            Action::QuickOpen => t!("action.quick_open"),
             Action::ToggleLineWrap => t!("action.toggle_line_wrap"),
             Action::ToggleComposeMode => t!("action.toggle_compose_mode"),
             Action::SetComposeWidth => t!("action.set_compose_width"),

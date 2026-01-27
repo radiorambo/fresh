@@ -39,6 +39,32 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+/// Mouse event kinds for terminal forwarding.
+/// Simplified from crossterm's MouseEventKind to capture what we need.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalMouseEventKind {
+    /// Button press
+    Down(TerminalMouseButton),
+    /// Button release
+    Up(TerminalMouseButton),
+    /// Mouse drag with button held
+    Drag(TerminalMouseButton),
+    /// Mouse movement (no button)
+    Moved,
+    /// Scroll up
+    ScrollUp,
+    /// Scroll down
+    ScrollDown,
+}
+
+/// Mouse buttons for terminal forwarding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalMouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
 /// Result of handling an input event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputResult {
@@ -152,6 +178,15 @@ pub enum DeferredAction {
     // Terminal mode actions
     ToggleKeyboardCapture,
     SendTerminalKey(crossterm::event::KeyCode, crossterm::event::KeyModifiers),
+    /// Send a mouse event to the terminal PTY.
+    /// Fields: (col, row, event_kind, button, modifiers)
+    /// Coordinates are terminal-relative (0-based from terminal content area).
+    SendTerminalMouse {
+        col: u16,
+        row: u16,
+        kind: TerminalMouseEventKind,
+        modifiers: crossterm::event::KeyModifiers,
+    },
     ExitTerminalMode {
         explicit: bool,
     },
@@ -208,7 +243,14 @@ pub trait InputHandler {
             return InputResult::Consumed;
         }
 
-        // If modal, consume even if we didn't handle it
+        // If explicitly ignored, pass through (even for modal handlers)
+        // This allows modal handlers to opt-out of consuming specific keys
+        // (e.g., Ctrl+P to toggle Quick Open while it's open)
+        if result == InputResult::Ignored {
+            return InputResult::Ignored;
+        }
+
+        // If modal and result is not explicitly Ignored, consume to prevent leaking
         if self.is_modal() {
             return InputResult::Consumed;
         }
@@ -262,5 +304,58 @@ mod tests {
     fn test_is_consumed() {
         assert!(InputResult::Consumed.is_consumed());
         assert!(!InputResult::Ignored.is_consumed());
+    }
+
+    /// Test handler that tracks what it returns
+    struct TestModalHandler {
+        returns_ignored: bool,
+    }
+
+    impl InputHandler for TestModalHandler {
+        fn handle_key_event(&mut self, _event: &KeyEvent, _ctx: &mut InputContext) -> InputResult {
+            if self.returns_ignored {
+                InputResult::Ignored
+            } else {
+                InputResult::Consumed
+            }
+        }
+
+        fn is_modal(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn test_modal_handler_respects_ignored() {
+        // When modal handler returns Ignored, dispatch_input should also return Ignored
+        let mut handler = TestModalHandler {
+            returns_ignored: true,
+        };
+        let mut ctx = InputContext::new();
+        let event = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+
+        let result = handler.dispatch_input(&event, &mut ctx);
+        assert_eq!(
+            result,
+            InputResult::Ignored,
+            "Modal handler should respect Ignored result"
+        );
+    }
+
+    #[test]
+    fn test_modal_handler_consumes_unknown_keys() {
+        // When modal handler returns Consumed, dispatch_input should also return Consumed
+        let mut handler = TestModalHandler {
+            returns_ignored: false,
+        };
+        let mut ctx = InputContext::new();
+        let event = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+
+        let result = handler.dispatch_input(&event, &mut ctx);
+        assert_eq!(
+            result,
+            InputResult::Consumed,
+            "Modal handler should consume handled keys"
+        );
     }
 }

@@ -2,11 +2,95 @@
 //!
 //! This module provides a JavaScript runtime using QuickJS for executing
 //! TypeScript plugins. TypeScript is transpiled to JavaScript using oxc.
+//!
+//! # Adding New API Methods
+//!
+//! When adding a new method to `JsEditorApi`, follow these steps for full type safety:
+//!
+//! ## 1. Define Types in `fresh-core/src/api.rs`
+//!
+//! If your method needs custom types (parameters or return values), define them with:
+//! ```rust,ignore
+//! #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+//! #[serde(rename_all = "camelCase")]  // Match JS naming conventions
+//! #[ts(export)]  // Generates TypeScript type definition
+//! pub struct MyConfig {
+//!     pub field: String,
+//! }
+//! ```
+//!
+//! ## 2. Add PluginCommand Variant
+//!
+//! In `fresh-core/src/api.rs`, add the command variant using typed structs:
+//! ```rust,ignore
+//! pub enum PluginCommand {
+//!     MyCommand {
+//!         language: String,
+//!         config: MyConfig,  // Use typed struct, not JsonValue
+//!     },
+//! }
+//! ```
+//!
+//! ## 3. Implement the API Method
+//!
+//! In `JsEditorApi`, use typed parameters for automatic deserialization:
+//! ```rust,ignore
+//! /// Description of what this method does
+//! pub fn my_method(&self, language: String, config: MyConfig) -> bool {
+//!     self.command_sender
+//!         .send(PluginCommand::MyCommand { language, config })
+//!         .is_ok()
+//! }
+//! ```
+//!
+//! For methods returning complex types, use `#[plugin_api(ts_return = "Type")]`:
+//! ```rust,ignore
+//! #[plugin_api(ts_return = "MyResult | null")]
+//! pub fn get_data<'js>(&self, ctx: rquickjs::Ctx<'js>) -> rquickjs::Result<Value<'js>> {
+//!     // Serialize result to JS value
+//! }
+//! ```
+//!
+//! For async methods:
+//! ```rust,ignore
+//! #[plugin_api(async_promise, js_name = "myAsyncMethod", ts_return = "MyResult")]
+//! #[qjs(rename = "_myAsyncMethodStart")]
+//! pub fn my_async_method_start(&self, param: String) -> u64 {
+//!     // Return callback ID, actual result sent via PluginResponse
+//! }
+//! ```
+//!
+//! ## 4. Register Types for Export
+//!
+//! In `ts_export.rs`, add your types to `get_type_decl()`:
+//! ```rust,ignore
+//! "MyConfig" => Some(MyConfig::decl()),
+//! ```
+//!
+//! And import them at the top of the file.
+//!
+//! ## 5. Handle the Command
+//!
+//! In `fresh-editor/src/app/plugin_commands.rs`, add the handler:
+//! ```rust,ignore
+//! pub(super) fn handle_my_command(&mut self, language: String, config: MyConfig) {
+//!     // Process the command
+//! }
+//! ```
+//!
+//! And dispatch it in `fresh-editor/src/app/mod.rs`.
+//!
+//! ## 6. Regenerate TypeScript Definitions
+//!
+//! Run: `cargo test -p fresh-plugin-runtime write_fresh_dts_file -- --ignored`
+//!
+//! This validates TypeScript syntax and writes `plugins/lib/fresh.d.ts`.
 
 use anyhow::{anyhow, Result};
 use fresh_core::api::{
     ActionSpec, BufferInfo, CompositeHunk, CreateCompositeBufferOptions, EditorStateSnapshot,
-    JsCallbackId, PluginCommand, PluginResponse,
+    JsCallbackId, LanguagePackConfig, LspServerPackConfig, OverlayOptions, PluginCommand,
+    PluginResponse,
 };
 use fresh_core::command::Command;
 use fresh_core::overlay::OverlayNamespace;
@@ -1047,6 +1131,49 @@ impl JsEditorApi {
         let _ = self.command_sender.send(PluginCommand::ReloadConfig);
     }
 
+    /// Reload theme registry from disk
+    /// Call this after installing theme packages or saving new themes
+    pub fn reload_themes(&self) {
+        let _ = self.command_sender.send(PluginCommand::ReloadThemes);
+    }
+
+    /// Register a TextMate grammar file for a language
+    /// The grammar will be pending until reload_grammars() is called
+    pub fn register_grammar(
+        &self,
+        language: String,
+        grammar_path: String,
+        extensions: Vec<String>,
+    ) -> bool {
+        self.command_sender
+            .send(PluginCommand::RegisterGrammar {
+                language,
+                grammar_path,
+                extensions,
+            })
+            .is_ok()
+    }
+
+    /// Register language configuration (comment prefix, indentation, formatter)
+    pub fn register_language_config(&self, language: String, config: LanguagePackConfig) -> bool {
+        self.command_sender
+            .send(PluginCommand::RegisterLanguageConfig { language, config })
+            .is_ok()
+    }
+
+    /// Register an LSP server for a language
+    pub fn register_lsp_server(&self, language: String, config: LspServerPackConfig) -> bool {
+        self.command_sender
+            .send(PluginCommand::RegisterLspServer { language, config })
+            .is_ok()
+    }
+
+    /// Reload the grammar registry to apply registered grammars
+    /// Call this after registering one or more grammars
+    pub fn reload_grammars(&self) {
+        let _ = self.command_sender.send(PluginCommand::ReloadGrammars);
+    }
+
     /// Get config directory path
     pub fn get_config_dir(&self) -> String {
         self.services.config_dir().to_string_lossy().to_string()
@@ -1259,55 +1386,73 @@ impl JsEditorApi {
 
     // === Overlays ===
 
-    /// Add an overlay with styling
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_overlay(
+    /// Add an overlay with styling options
+    ///
+    /// Colors can be specified as RGB arrays `[r, g, b]` or theme key strings.
+    /// Theme keys are resolved at render time, so overlays update with theme changes.
+    ///
+    /// Theme key examples: "ui.status_bar_fg", "editor.selection_bg", "syntax.keyword"
+    ///
+    /// Example usage in TypeScript:
+    /// ```typescript
+    /// editor.addOverlay(bufferId, "my-namespace", 0, 10, {
+    ///   fg: "syntax.keyword",           // theme key
+    ///   bg: [40, 40, 50],               // RGB array
+    ///   bold: true,
+    /// });
+    /// ```
+    pub fn add_overlay<'js>(
         &self,
+        _ctx: rquickjs::Ctx<'js>,
         buffer_id: u32,
         namespace: String,
         start: u32,
         end: u32,
-        r: i32,
-        g: i32,
-        b: i32,
-        underline: rquickjs::function::Opt<bool>,
-        bold: rquickjs::function::Opt<bool>,
-        italic: rquickjs::function::Opt<bool>,
-        bg_r: rquickjs::function::Opt<i32>,
-        bg_g: rquickjs::function::Opt<i32>,
-        bg_b: rquickjs::function::Opt<i32>,
-        extend_to_line_end: rquickjs::function::Opt<bool>,
-    ) -> bool {
-        // -1 means use default color (white)
-        let color = if r >= 0 && g >= 0 && b >= 0 {
-            (r as u8, g as u8, b as u8)
-        } else {
-            (255, 255, 255)
-        };
+        options: rquickjs::Object<'js>,
+    ) -> rquickjs::Result<bool> {
+        use fresh_core::api::OverlayColorSpec;
 
-        // -1 for bg means no background, also None if not provided
-        let bg_r = bg_r.0.unwrap_or(-1);
-        let bg_g = bg_g.0.unwrap_or(-1);
-        let bg_b = bg_b.0.unwrap_or(-1);
-        let bg_color = if bg_r >= 0 && bg_g >= 0 && bg_b >= 0 {
-            Some((bg_r as u8, bg_g as u8, bg_b as u8))
-        } else {
+        // Parse color spec from JS value (can be [r,g,b] array or "theme.key" string)
+        fn parse_color_spec(key: &str, obj: &rquickjs::Object<'_>) -> Option<OverlayColorSpec> {
+            // Try as string first (theme key)
+            if let Ok(theme_key) = obj.get::<_, String>(key) {
+                if !theme_key.is_empty() {
+                    return Some(OverlayColorSpec::ThemeKey(theme_key));
+                }
+            }
+            // Try as array [r, g, b]
+            if let Ok(arr) = obj.get::<_, Vec<u8>>(key) {
+                if arr.len() >= 3 {
+                    return Some(OverlayColorSpec::Rgb(arr[0], arr[1], arr[2]));
+                }
+            }
             None
+        }
+
+        let fg = parse_color_spec("fg", &options);
+        let bg = parse_color_spec("bg", &options);
+        let underline: bool = options.get("underline").unwrap_or(false);
+        let bold: bool = options.get("bold").unwrap_or(false);
+        let italic: bool = options.get("italic").unwrap_or(false);
+        let extend_to_line_end: bool = options.get("extendToLineEnd").unwrap_or(false);
+
+        let options = OverlayOptions {
+            fg,
+            bg,
+            underline,
+            bold,
+            italic,
+            extend_to_line_end,
         };
 
-        self.command_sender
-            .send(PluginCommand::AddOverlay {
-                buffer_id: BufferId(buffer_id as usize),
-                namespace: Some(OverlayNamespace::from_string(namespace)),
-                range: (start as usize)..(end as usize),
-                color,
-                bg_color,
-                underline: underline.0.unwrap_or(false),
-                bold: bold.0.unwrap_or(false),
-                italic: italic.0.unwrap_or(false),
-                extend_to_line_end: extend_to_line_end.0.unwrap_or(false),
-            })
-            .is_ok()
+        let _ = self.command_sender.send(PluginCommand::AddOverlay {
+            buffer_id: BufferId(buffer_id as usize),
+            namespace: Some(OverlayNamespace::from_string(namespace)),
+            range: (start as usize)..(end as usize),
+            options,
+        });
+
+        Ok(true)
     }
 
     /// Clear all overlays in a namespace
@@ -2385,6 +2530,92 @@ impl JsEditorApi {
     pub fn get_current_locale(&self) -> String {
         self.services.current_locale()
     }
+
+    // === Plugin Management ===
+
+    /// Load a plugin from a file path (async)
+    #[plugin_api(async_promise, js_name = "loadPlugin", ts_return = "boolean")]
+    #[qjs(rename = "_loadPluginStart")]
+    pub fn load_plugin_start(&self, _ctx: rquickjs::Ctx<'_>, path: String) -> u64 {
+        let id = {
+            let mut id_ref = self.next_request_id.borrow_mut();
+            let id = *id_ref;
+            *id_ref += 1;
+            self.callback_contexts
+                .borrow_mut()
+                .insert(id, self.plugin_name.clone());
+            id
+        };
+        let _ = self.command_sender.send(PluginCommand::LoadPlugin {
+            path: std::path::PathBuf::from(path),
+            callback_id: JsCallbackId::new(id),
+        });
+        id
+    }
+
+    /// Unload a plugin by name (async)
+    #[plugin_api(async_promise, js_name = "unloadPlugin", ts_return = "boolean")]
+    #[qjs(rename = "_unloadPluginStart")]
+    pub fn unload_plugin_start(&self, _ctx: rquickjs::Ctx<'_>, name: String) -> u64 {
+        let id = {
+            let mut id_ref = self.next_request_id.borrow_mut();
+            let id = *id_ref;
+            *id_ref += 1;
+            self.callback_contexts
+                .borrow_mut()
+                .insert(id, self.plugin_name.clone());
+            id
+        };
+        let _ = self.command_sender.send(PluginCommand::UnloadPlugin {
+            name,
+            callback_id: JsCallbackId::new(id),
+        });
+        id
+    }
+
+    /// Reload a plugin by name (async)
+    #[plugin_api(async_promise, js_name = "reloadPlugin", ts_return = "boolean")]
+    #[qjs(rename = "_reloadPluginStart")]
+    pub fn reload_plugin_start(&self, _ctx: rquickjs::Ctx<'_>, name: String) -> u64 {
+        let id = {
+            let mut id_ref = self.next_request_id.borrow_mut();
+            let id = *id_ref;
+            *id_ref += 1;
+            self.callback_contexts
+                .borrow_mut()
+                .insert(id, self.plugin_name.clone());
+            id
+        };
+        let _ = self.command_sender.send(PluginCommand::ReloadPlugin {
+            name,
+            callback_id: JsCallbackId::new(id),
+        });
+        id
+    }
+
+    /// List all loaded plugins (async)
+    /// Returns array of { name: string, path: string, enabled: boolean }
+    #[plugin_api(
+        async_promise,
+        js_name = "listPlugins",
+        ts_return = "Array<{name: string, path: string, enabled: boolean}>"
+    )]
+    #[qjs(rename = "_listPluginsStart")]
+    pub fn list_plugins_start(&self, _ctx: rquickjs::Ctx<'_>) -> u64 {
+        let id = {
+            let mut id_ref = self.next_request_id.borrow_mut();
+            let id = *id_ref;
+            *id_ref += 1;
+            self.callback_contexts
+                .borrow_mut()
+                .insert(id, self.plugin_name.clone());
+            id
+        };
+        let _ = self.command_sender.send(PluginCommand::ListPlugins {
+            callback_id: JsCallbackId::new(id),
+        });
+        id
+    }
 }
 
 /// QuickJS-based JavaScript runtime for plugins
@@ -2649,6 +2880,10 @@ impl QuickJsBackend {
                 editor.getBufferText = _wrapAsync("_getBufferTextStart", "getBufferText");
                 editor.createCompositeBuffer = _wrapAsync("_createCompositeBufferStart", "createCompositeBuffer");
                 editor.getHighlights = _wrapAsync("_getHighlightsStart", "getHighlights");
+                editor.loadPlugin = _wrapAsync("_loadPluginStart", "loadPlugin");
+                editor.unloadPlugin = _wrapAsync("_unloadPluginStart", "unloadPlugin");
+                editor.reloadPlugin = _wrapAsync("_reloadPluginStart", "reloadPlugin");
+                editor.listPlugins = _wrapAsync("_listPluginsStart", "listPlugins");
 
                 // Wrapper for deleteTheme - wraps sync function in Promise
                 editor.deleteTheme = function(name) {
@@ -2785,7 +3020,7 @@ impl QuickJsBackend {
     /// Emit an event to all registered handlers
     pub async fn emit(&mut self, event_name: &str, event_data: &serde_json::Value) -> Result<bool> {
         let _event_data_str = event_data.to_string();
-        tracing::debug!("emit: event '{}' with data: {:?}", event_name, event_data);
+        tracing::trace!("emit: event '{}' with data: {:?}", event_name, event_data);
 
         // Track execution state for signal handler debugging
         self.services
@@ -3220,6 +3455,7 @@ mod tests {
         fn register_command(&self, _command: fresh_core::command::Command) {}
         fn unregister_command(&self, _name: &str) {}
         fn unregister_commands_by_prefix(&self, _prefix: &str) {}
+        fn unregister_commands_by_plugin(&self, _plugin_name: &str) {}
         fn plugins_dir(&self) -> std::path::PathBuf {
             std::path::PathBuf::from("/tmp/plugins")
         }
@@ -4199,10 +4435,19 @@ mod tests {
     fn test_api_add_overlay() {
         let (mut backend, rx) = create_test_backend();
 
-        backend.execute_js(r#"
+        backend
+            .execute_js(
+                r#"
             const editor = getEditor();
-            editor.addOverlay(1, "highlight", 10, 20, 255, 128, 0, false, true, false, 50, 50, 50, false);
-        "#, "test.js").unwrap();
+            editor.addOverlay(1, "highlight", 10, 20, {
+                fg: [255, 128, 0],
+                bg: [50, 50, 50],
+                bold: true,
+            });
+        "#,
+                "test.js",
+            )
+            .unwrap();
 
         let cmd = rx.try_recv().unwrap();
         match cmd {
@@ -4210,23 +4455,73 @@ mod tests {
                 buffer_id,
                 namespace,
                 range,
-                color,
-                bg_color,
-                underline,
-                bold,
-                italic,
-                extend_to_line_end,
+                options,
             } => {
+                use fresh_core::api::OverlayColorSpec;
                 assert_eq!(buffer_id.0, 1);
                 assert!(namespace.is_some());
                 assert_eq!(namespace.unwrap().as_str(), "highlight");
                 assert_eq!(range, 10..20);
-                assert_eq!(color, (255, 128, 0));
-                assert_eq!(bg_color, Some((50, 50, 50)));
-                assert!(!underline);
-                assert!(bold);
-                assert!(!italic);
-                assert!(!extend_to_line_end);
+                assert!(matches!(
+                    options.fg,
+                    Some(OverlayColorSpec::Rgb(255, 128, 0))
+                ));
+                assert!(matches!(
+                    options.bg,
+                    Some(OverlayColorSpec::Rgb(50, 50, 50))
+                ));
+                assert!(!options.underline);
+                assert!(options.bold);
+                assert!(!options.italic);
+                assert!(!options.extend_to_line_end);
+            }
+            _ => panic!("Expected AddOverlay, got {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_api_add_overlay_with_theme_keys() {
+        let (mut backend, rx) = create_test_backend();
+
+        backend
+            .execute_js(
+                r#"
+            const editor = getEditor();
+            // Test with theme keys for colors
+            editor.addOverlay(1, "themed", 0, 10, {
+                fg: "ui.status_bar_fg",
+                bg: "editor.selection_bg",
+            });
+        "#,
+                "test.js",
+            )
+            .unwrap();
+
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PluginCommand::AddOverlay {
+                buffer_id,
+                namespace,
+                range,
+                options,
+            } => {
+                use fresh_core::api::OverlayColorSpec;
+                assert_eq!(buffer_id.0, 1);
+                assert!(namespace.is_some());
+                assert_eq!(namespace.unwrap().as_str(), "themed");
+                assert_eq!(range, 0..10);
+                assert!(matches!(
+                    &options.fg,
+                    Some(OverlayColorSpec::ThemeKey(k)) if k == "ui.status_bar_fg"
+                ));
+                assert!(matches!(
+                    &options.bg,
+                    Some(OverlayColorSpec::ThemeKey(k)) if k == "editor.selection_bg"
+                ));
+                assert!(!options.underline);
+                assert!(!options.bold);
+                assert!(!options.italic);
+                assert!(!options.extend_to_line_end);
             }
             _ => panic!("Expected AddOverlay, got {:?}", cmd),
         }
@@ -4871,5 +5166,189 @@ mod tests {
         if JSEDITORAPI_JS_METHODS.len() > 20 {
             println!("  ... and {} more", JSEDITORAPI_JS_METHODS.len() - 20);
         }
+    }
+
+    // ==================== Plugin Management API Tests ====================
+
+    #[test]
+    fn test_api_load_plugin_sends_command() {
+        let (mut backend, rx) = create_test_backend();
+
+        // Call loadPlugin - this returns a Promise and sends the command
+        backend
+            .execute_js(
+                r#"
+            const editor = getEditor();
+            globalThis._loadPromise = editor.loadPlugin("/path/to/plugin.ts");
+        "#,
+                "test.js",
+            )
+            .unwrap();
+
+        // Verify the LoadPlugin command was sent
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PluginCommand::LoadPlugin { path, callback_id } => {
+                assert_eq!(path.to_str().unwrap(), "/path/to/plugin.ts");
+                assert!(callback_id.0 > 0); // Should have a valid callback ID
+            }
+            _ => panic!("Expected LoadPlugin, got {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_api_unload_plugin_sends_command() {
+        let (mut backend, rx) = create_test_backend();
+
+        // Call unloadPlugin - this returns a Promise and sends the command
+        backend
+            .execute_js(
+                r#"
+            const editor = getEditor();
+            globalThis._unloadPromise = editor.unloadPlugin("my-plugin");
+        "#,
+                "test.js",
+            )
+            .unwrap();
+
+        // Verify the UnloadPlugin command was sent
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PluginCommand::UnloadPlugin { name, callback_id } => {
+                assert_eq!(name, "my-plugin");
+                assert!(callback_id.0 > 0); // Should have a valid callback ID
+            }
+            _ => panic!("Expected UnloadPlugin, got {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_api_reload_plugin_sends_command() {
+        let (mut backend, rx) = create_test_backend();
+
+        // Call reloadPlugin - this returns a Promise and sends the command
+        backend
+            .execute_js(
+                r#"
+            const editor = getEditor();
+            globalThis._reloadPromise = editor.reloadPlugin("my-plugin");
+        "#,
+                "test.js",
+            )
+            .unwrap();
+
+        // Verify the ReloadPlugin command was sent
+        let cmd = rx.try_recv().unwrap();
+        match cmd {
+            PluginCommand::ReloadPlugin { name, callback_id } => {
+                assert_eq!(name, "my-plugin");
+                assert!(callback_id.0 > 0); // Should have a valid callback ID
+            }
+            _ => panic!("Expected ReloadPlugin, got {:?}", cmd),
+        }
+    }
+
+    #[test]
+    fn test_api_load_plugin_resolves_callback() {
+        let (mut backend, rx) = create_test_backend();
+
+        // Call loadPlugin and set up a handler for when it resolves
+        backend
+            .execute_js(
+                r#"
+            const editor = getEditor();
+            globalThis._loadResult = null;
+            editor.loadPlugin("/path/to/plugin.ts").then(result => {
+                globalThis._loadResult = result;
+            });
+        "#,
+                "test.js",
+            )
+            .unwrap();
+
+        // Get the callback_id from the command
+        let callback_id = match rx.try_recv().unwrap() {
+            PluginCommand::LoadPlugin { callback_id, .. } => callback_id,
+            cmd => panic!("Expected LoadPlugin, got {:?}", cmd),
+        };
+
+        // Simulate the editor responding with success
+        backend.resolve_callback(callback_id, "true");
+
+        // Drive the Promise to completion
+        backend
+            .plugin_contexts
+            .borrow()
+            .get("test")
+            .unwrap()
+            .clone()
+            .with(|ctx| {
+                run_pending_jobs_checked(&ctx, "test async loadPlugin");
+            });
+
+        // Verify the Promise resolved with true
+        backend
+            .plugin_contexts
+            .borrow()
+            .get("test")
+            .unwrap()
+            .clone()
+            .with(|ctx| {
+                let global = ctx.globals();
+                let result: bool = global.get("_loadResult").unwrap();
+                assert!(result);
+            });
+    }
+
+    #[test]
+    fn test_api_unload_plugin_rejects_on_error() {
+        let (mut backend, rx) = create_test_backend();
+
+        // Call unloadPlugin and set up handlers for resolve/reject
+        backend
+            .execute_js(
+                r#"
+            const editor = getEditor();
+            globalThis._unloadError = null;
+            editor.unloadPlugin("nonexistent-plugin").catch(err => {
+                globalThis._unloadError = err.message || String(err);
+            });
+        "#,
+                "test.js",
+            )
+            .unwrap();
+
+        // Get the callback_id from the command
+        let callback_id = match rx.try_recv().unwrap() {
+            PluginCommand::UnloadPlugin { callback_id, .. } => callback_id,
+            cmd => panic!("Expected UnloadPlugin, got {:?}", cmd),
+        };
+
+        // Simulate the editor responding with an error
+        backend.reject_callback(callback_id, "Plugin 'nonexistent-plugin' not found");
+
+        // Drive the Promise to completion
+        backend
+            .plugin_contexts
+            .borrow()
+            .get("test")
+            .unwrap()
+            .clone()
+            .with(|ctx| {
+                run_pending_jobs_checked(&ctx, "test async unloadPlugin");
+            });
+
+        // Verify the Promise rejected with the error
+        backend
+            .plugin_contexts
+            .borrow()
+            .get("test")
+            .unwrap()
+            .clone()
+            .with(|ctx| {
+                let global = ctx.globals();
+                let error: String = global.get("_unloadError").unwrap();
+                assert!(error.contains("nonexistent-plugin"));
+            });
     }
 }

@@ -88,6 +88,7 @@ pub struct PartialConfig {
     pub lsp: Option<HashMap<String, LspServerConfig>>,
     pub warnings: Option<PartialWarningsConfig>,
     pub plugins: Option<HashMap<String, PartialPluginConfig>>,
+    pub packages: Option<PartialPackagesConfig>,
 }
 
 impl Merge for PartialConfig {
@@ -103,6 +104,7 @@ impl Merge for PartialConfig {
         merge_partial(&mut self.file_browser, &other.file_browser);
         merge_partial(&mut self.terminal, &other.terminal);
         merge_partial(&mut self.warnings, &other.warnings);
+        merge_partial(&mut self.packages, &other.packages);
 
         // Lists: higher precedence replaces (per design doc)
         self.keybindings.merge_from(&other.keybindings);
@@ -153,6 +155,10 @@ pub struct PartialEditorConfig {
     pub auto_revert_poll_interval_ms: Option<u64>,
     pub file_tree_poll_interval_ms: Option<u64>,
     pub default_line_ending: Option<LineEndingOption>,
+    pub trim_trailing_whitespace_on_save: Option<bool>,
+    pub ensure_final_newline_on_save: Option<bool>,
+    pub highlight_matching_brackets: Option<bool>,
+    pub rainbow_brackets: Option<bool>,
     pub cursor_style: Option<CursorStyle>,
     pub keyboard_disambiguate_escape_codes: Option<bool>,
     pub keyboard_report_event_types: Option<bool>,
@@ -206,6 +212,13 @@ impl Merge for PartialEditorConfig {
             .merge_from(&other.file_tree_poll_interval_ms);
         self.default_line_ending
             .merge_from(&other.default_line_ending);
+        self.trim_trailing_whitespace_on_save
+            .merge_from(&other.trim_trailing_whitespace_on_save);
+        self.ensure_final_newline_on_save
+            .merge_from(&other.ensure_final_newline_on_save);
+        self.highlight_matching_brackets
+            .merge_from(&other.highlight_matching_brackets);
+        self.rainbow_brackets.merge_from(&other.rainbow_brackets);
         self.cursor_style.merge_from(&other.cursor_style);
         self.keyboard_disambiguate_escape_codes
             .merge_from(&other.keyboard_disambiguate_escape_codes);
@@ -288,6 +301,19 @@ impl Merge for PartialWarningsConfig {
     fn merge_from(&mut self, other: &Self) {
         self.show_status_indicator
             .merge_from(&other.show_status_indicator);
+    }
+}
+
+/// Partial packages configuration for plugin/theme package management.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct PartialPackagesConfig {
+    pub sources: Option<Vec<String>>,
+}
+
+impl Merge for PartialPackagesConfig {
+    fn merge_from(&mut self, other: &Self) {
+        self.sources.merge_from(&other.sources);
     }
 }
 
@@ -392,6 +418,10 @@ impl From<&crate::config::EditorConfig> for PartialEditorConfig {
             auto_revert_poll_interval_ms: Some(cfg.auto_revert_poll_interval_ms),
             file_tree_poll_interval_ms: Some(cfg.file_tree_poll_interval_ms),
             default_line_ending: Some(cfg.default_line_ending.clone()),
+            trim_trailing_whitespace_on_save: Some(cfg.trim_trailing_whitespace_on_save),
+            ensure_final_newline_on_save: Some(cfg.ensure_final_newline_on_save),
+            highlight_matching_brackets: Some(cfg.highlight_matching_brackets),
+            rainbow_brackets: Some(cfg.rainbow_brackets),
             cursor_style: Some(cfg.cursor_style),
             keyboard_disambiguate_escape_codes: Some(cfg.keyboard_disambiguate_escape_codes),
             keyboard_report_event_types: Some(cfg.keyboard_report_event_types),
@@ -466,6 +496,16 @@ impl PartialEditorConfig {
             default_line_ending: self
                 .default_line_ending
                 .unwrap_or(defaults.default_line_ending.clone()),
+            trim_trailing_whitespace_on_save: self
+                .trim_trailing_whitespace_on_save
+                .unwrap_or(defaults.trim_trailing_whitespace_on_save),
+            ensure_final_newline_on_save: self
+                .ensure_final_newline_on_save
+                .unwrap_or(defaults.ensure_final_newline_on_save),
+            highlight_matching_brackets: self
+                .highlight_matching_brackets
+                .unwrap_or(defaults.highlight_matching_brackets),
+            rainbow_brackets: self.rainbow_brackets.unwrap_or(defaults.rainbow_brackets),
             cursor_style: self.cursor_style.unwrap_or(defaults.cursor_style),
             keyboard_disambiguate_escape_codes: self
                 .keyboard_disambiguate_escape_codes
@@ -570,6 +610,25 @@ impl PartialWarningsConfig {
             show_status_indicator: self
                 .show_status_indicator
                 .unwrap_or(defaults.show_status_indicator),
+        }
+    }
+}
+
+impl From<&crate::config::PackagesConfig> for PartialPackagesConfig {
+    fn from(cfg: &crate::config::PackagesConfig) -> Self {
+        Self {
+            sources: Some(cfg.sources.clone()),
+        }
+    }
+}
+
+impl PartialPackagesConfig {
+    pub fn resolve(
+        self,
+        defaults: &crate::config::PackagesConfig,
+    ) -> crate::config::PackagesConfig {
+        crate::config::PackagesConfig {
+            sources: self.sources.unwrap_or_else(|| defaults.sources.clone()),
         }
     }
 }
@@ -686,6 +745,7 @@ impl From<&crate::config::Config> for PartialConfig {
                     Some(non_default_plugins)
                 }
             },
+            packages: Some(PartialPackagesConfig::from(&cfg.packages)),
         }
     }
 }
@@ -787,6 +847,10 @@ impl PartialConfig {
                 .map(|e| e.resolve(&defaults.warnings))
                 .unwrap_or_else(|| defaults.warnings.clone()),
             plugins,
+            packages: self
+                .packages
+                .map(|e| e.resolve(&defaults.packages))
+                .unwrap_or_else(|| defaults.packages.clone()),
         }
     }
 }

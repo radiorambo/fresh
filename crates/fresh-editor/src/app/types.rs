@@ -208,20 +208,83 @@ impl BufferMetadata {
         // Use canonicalized forms first to handle macOS /var -> /private/var differences.
         let display_name = Self::display_name_for_path(&path, working_dir);
 
+        // Check if this is a library file (outside project or in vendor directories)
+        let (lsp_enabled, lsp_disabled_reason) = if Self::is_library_path(&path, working_dir) {
+            (false, Some(t!("lsp.disabled.library_file").to_string()))
+        } else {
+            (true, None)
+        };
+
         Self {
             kind: BufferKind::File {
                 path,
                 uri: file_uri,
             },
             display_name,
-            lsp_enabled: true,
-            lsp_disabled_reason: None,
+            lsp_enabled,
+            lsp_disabled_reason,
             read_only: false,
             binary: false,
             lsp_opened_with: HashSet::new(),
             hidden_from_tabs: false,
             recovery_id: None,
         }
+    }
+
+    /// Check if a path is a library file (outside project root or in vendor directories)
+    ///
+    /// Library files include:
+    /// - Files outside the working directory
+    /// - Files in common vendor/dependency directories (.cargo, node_modules, etc.)
+    pub fn is_library_path(path: &Path, working_dir: &Path) -> bool {
+        // Check if outside working directory
+        if !path.starts_with(working_dir) {
+            return true;
+        }
+
+        // Check for common library paths within the project
+        let path_str = path.to_string_lossy();
+
+        // Rust: .cargo directory (can be within project for vendor'd crates)
+        if path_str.contains("/.cargo/") || path_str.contains("\\.cargo\\") {
+            return true;
+        }
+
+        // Node.js: node_modules
+        if path_str.contains("/node_modules/") || path_str.contains("\\node_modules\\") {
+            return true;
+        }
+
+        // Python: site-packages, dist-packages
+        if path_str.contains("/site-packages/")
+            || path_str.contains("\\site-packages\\")
+            || path_str.contains("/dist-packages/")
+            || path_str.contains("\\dist-packages\\")
+        {
+            return true;
+        }
+
+        // Go: pkg/mod
+        if path_str.contains("/pkg/mod/") || path_str.contains("\\pkg\\mod\\") {
+            return true;
+        }
+
+        // Ruby: gems
+        if path_str.contains("/gems/") || path_str.contains("\\gems\\") {
+            return true;
+        }
+
+        // Java/Gradle: .gradle
+        if path_str.contains("/.gradle/") || path_str.contains("\\.gradle\\") {
+            return true;
+        }
+
+        // Maven: .m2
+        if path_str.contains("/.m2/") || path_str.contains("\\.m2\\") {
+            return true;
+        }
+
+        false
     }
 
     /// Compute display name relative to working_dir when possible, otherwise absolute
@@ -633,10 +696,8 @@ pub(crate) struct CachedLayout {
     /// Suggestions area for mouse hit testing
     /// (inner_rect, scroll_start_idx, visible_count, total_count)
     pub suggestions_area: Option<(Rect, usize, usize, usize)>,
-    /// Tab hit areas for mouse interaction
-    /// (split_id, buffer_id, tab_row, tab_start_col, tab_end_col, close_button_start_col)
-    /// The close button spans from close_button_start_col to tab_end_col
-    pub tab_areas: Vec<(SplitId, BufferId, u16, u16, u16, u16)>,
+    /// Tab layouts per split for mouse interaction
+    pub tab_layouts: HashMap<SplitId, crate::view::ui::tabs::TabLayout>,
     /// Close split button hit areas
     /// (split_id, row, start_col, end_col)
     pub close_split_areas: Vec<(SplitId, u16, u16, u16)>,
@@ -659,6 +720,10 @@ pub(crate) struct CachedLayout {
     pub status_bar_line_ending_area: Option<(u16, u16, u16)>,
     /// Status bar language indicator area (row, start_col, end_col)
     pub status_bar_language_area: Option<(u16, u16, u16)>,
+    /// Status bar message area (row, start_col, end_col) - clickable to show status log
+    pub status_bar_message_area: Option<(u16, u16, u16)>,
     /// Search options layout for checkbox hit testing
     pub search_options_layout: Option<crate::view::ui::status_bar::SearchOptionsLayout>,
+    /// Menu bar layout for hit testing
+    pub menu_layout: Option<crate::view::ui::menu::MenuLayout>,
 }

@@ -1555,3 +1555,125 @@ fn test_auto_close_parens_multiple_cursors() {
         final_buffer
     );
 }
+
+/// Test that cut with multiple cursor selections works correctly
+/// Each cursor has a selection, and cut should remove all selected text
+#[test]
+fn test_multicursor_cut() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+
+    // Type content with repeated words
+    harness
+        .type_text("hello world\nhello world\nhello world\n")
+        .unwrap();
+    harness.render().unwrap();
+
+    // Move to beginning
+    harness
+        .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+
+    // Add cursors below (should have 3 cursors, one per line)
+    harness.editor_mut().add_cursor_below();
+    harness.editor_mut().add_cursor_below();
+    harness.render().unwrap();
+
+    // Verify 3 cursors
+    assert_eq!(
+        harness.editor().active_state().cursors.iter().count(),
+        3,
+        "Should have 3 cursors"
+    );
+
+    // Select "hello" on each line with Shift+End (word at start of each line)
+    // First, select the word "hello" by pressing Shift+Right 5 times
+    for _ in 0..5 {
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::SHIFT)
+            .unwrap();
+    }
+    harness.render().unwrap();
+
+    // Verify all cursors have selections
+    for (id, cursor) in harness.editor().active_state().cursors.iter() {
+        assert!(
+            cursor.selection_range().is_some(),
+            "Cursor {:?} should have a selection",
+            id
+        );
+        let range = cursor.selection_range().unwrap();
+        assert_eq!(
+            range.end - range.start,
+            5,
+            "Selection should be 5 characters (hello), got {}",
+            range.end - range.start
+        );
+    }
+
+    // Perform cut (Ctrl+X)
+    harness
+        .send_key(KeyCode::Char('x'), KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+
+    // Buffer should now have " world" on each line (hello removed)
+    let buffer_content = harness.get_buffer_content().unwrap();
+    assert_eq!(
+        buffer_content, " world\n world\n world\n",
+        "Cut should remove 'hello' from all lines. Got: {:?}",
+        buffer_content
+    );
+}
+
+/// Test that cut with multiple non-overlapping selections preserves correct positions
+#[test]
+fn test_multicursor_cut_same_line() {
+    use crossterm::event::{KeyCode, KeyModifiers};
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+
+    // Type content with two instances of "foo" on same line
+    harness.type_text("foo bar foo baz").unwrap();
+    harness.render().unwrap();
+
+    // Move cursor to start
+    harness
+        .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+
+    // Select first "foo" using Ctrl+D (add cursor at next match)
+    // First, select "foo" with Shift+Right 3 times
+    for _ in 0..3 {
+        harness
+            .send_key(KeyCode::Right, KeyModifiers::SHIFT)
+            .unwrap();
+    }
+    harness.render().unwrap();
+
+    // Add cursor at next "foo" match
+    harness.editor_mut().add_cursor_at_next_match();
+    harness.render().unwrap();
+
+    // Should have 2 cursors
+    assert_eq!(
+        harness.editor().active_state().cursors.iter().count(),
+        2,
+        "Should have 2 cursors"
+    );
+
+    // Cut - should remove both "foo"s
+    harness
+        .send_key(KeyCode::Char('x'), KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+
+    // Buffer should now have " bar  baz" (both "foo"s removed)
+    let buffer_content = harness.get_buffer_content().unwrap();
+    assert_eq!(
+        buffer_content, " bar  baz",
+        "Cut should remove both 'foo' instances. Got: {:?}",
+        buffer_content
+    );
+}

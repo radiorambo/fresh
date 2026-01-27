@@ -354,7 +354,7 @@ impl Editor {
 
         let is_maximized = self.split_manager.is_maximized();
 
-        let (split_areas, tab_areas, close_split_areas, maximize_split_areas, view_line_mappings) =
+        let (split_areas, tab_layouts, close_split_areas, maximize_split_areas, view_line_mappings) =
             SplitRenderer::render_content(
                 frame,
                 editor_content_area,
@@ -448,7 +448,7 @@ impl Editor {
         self.render_terminal_splits(frame, &split_areas);
 
         self.cached_layout.split_areas = split_areas;
-        self.cached_layout.tab_areas = tab_areas;
+        self.cached_layout.tab_layouts = tab_layouts;
         self.cached_layout.close_split_areas = close_split_areas;
         self.cached_layout.maximize_split_areas = maximize_split_areas;
         self.cached_layout.view_line_mappings = view_line_mappings;
@@ -492,15 +492,18 @@ impl Editor {
                 // For other prompts, render suggestions as before
                 // Calculate overlay area: position above prompt line (which is below status bar)
                 let suggestion_count = prompt.suggestions.len().min(10);
-                let height = suggestion_count as u16 + 2; // +2 for borders
+                let is_quick_open =
+                    prompt.prompt_type == crate::view::prompt::PromptType::QuickOpen;
+                let hints_height: u16 = if is_quick_open { 1 } else { 0 };
+                let height = suggestion_count as u16 + 2 + hints_height; // +2 for borders, +1 for hints if QuickOpen
 
-                // Position suggestions above the prompt line
-                // The prompt line is at main_chunks[3], so suggestions go above it
+                // Position suggestions above the prompt line (and hints line if present)
+                // The prompt line is at main_chunks[prompt_line_idx], so suggestions go above it
                 let suggestions_area = ratatui::layout::Rect {
                     x: 0,
                     y: main_chunks[prompt_line_idx].y.saturating_sub(height),
                     width: size.width,
-                    height,
+                    height: height - hints_height,
                 };
 
                 // Clear the area behind the suggestions to obscure underlying text
@@ -513,6 +516,18 @@ impl Editor {
                     &self.theme,
                     self.mouse_state.hover_target.as_ref(),
                 );
+
+                // Render hints line for QuickOpen between suggestions and prompt
+                if is_quick_open {
+                    let hints_area = ratatui::layout::Rect {
+                        x: 0,
+                        y: main_chunks[prompt_line_idx].y.saturating_sub(hints_height),
+                        width: size.width,
+                        height: hints_height,
+                    };
+                    frame.render_widget(ratatui::widgets::Clear, hints_area);
+                    Self::render_quick_open_hints(frame, hints_area, &self.theme);
+                }
             }
         }
 
@@ -584,6 +599,7 @@ impl Editor {
             self.cached_layout.status_bar_line_ending_area =
                 status_bar_layout.line_ending_indicator;
             self.cached_layout.status_bar_language_area = status_bar_layout.language_indicator;
+            self.cached_layout.status_bar_message_area = status_bar_layout.message_area;
         }
 
         // Render search options bar when in search prompt
@@ -815,7 +831,7 @@ impl Editor {
         }
 
         if self.menu_bar_visible {
-            crate::view::ui::MenuRenderer::render(
+            self.cached_layout.menu_layout = Some(crate::view::ui::MenuRenderer::render(
                 frame,
                 menu_bar_area,
                 &self.menus,
@@ -823,7 +839,9 @@ impl Editor {
                 &self.keybindings,
                 &self.theme,
                 self.mouse_state.hover_target.as_ref(),
-            );
+            ));
+        } else {
+            self.cached_layout.menu_layout = None;
         }
 
         // Render tab context menu if open
@@ -880,6 +898,35 @@ impl Editor {
             frame.buffer_mut(),
             self.color_capability,
         );
+    }
+
+    /// Render the Quick Open hints line showing available mode prefixes
+    fn render_quick_open_hints(
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        theme: &crate::view::theme::Theme,
+    ) {
+        use ratatui::style::{Modifier, Style};
+        use ratatui::text::{Line, Span};
+        use ratatui::widgets::Paragraph;
+        use rust_i18n::t;
+
+        let hints_style = Style::default()
+            .fg(theme.line_number_fg)
+            .bg(theme.suggestion_selected_bg)
+            .add_modifier(Modifier::DIM);
+        let hints_text = t!("quick_open.mode_hints");
+        // Left-align with small margin
+        let left_margin = 2;
+        let hints_width = crate::primitives::display_width::str_width(&hints_text);
+        let mut spans = Vec::new();
+        spans.push(Span::styled(" ".repeat(left_margin), hints_style));
+        spans.push(Span::styled(hints_text.to_string(), hints_style));
+        let remaining = (area.width as usize).saturating_sub(left_margin + hints_width);
+        spans.push(Span::styled(" ".repeat(remaining), hints_style));
+
+        let paragraph = Paragraph::new(Line::from(spans));
+        frame.render_widget(paragraph, area);
     }
 
     /// Apply dimming effect to UI elements outside the focused terminal area
@@ -3840,57 +3887,59 @@ impl Editor {
         active_buffer: BufferId,
         available_width: u16,
     ) {
+        tracing::debug!(
+            "ensure_active_tab_visible called: split={:?}, buffer={:?}, width={}",
+            split_id,
+            active_buffer,
+            available_width
+        );
         let Some(view_state) = self.split_view_states.get_mut(&split_id) else {
+            tracing::debug!("  -> no view_state for split");
             return;
         };
 
-        let split_buffers = &view_state.open_buffers;
-        let buffers = &self.buffers;
-        let buffer_metadata = &self.buffer_metadata;
-        // The theme is not strictly necessary here, but passed to TabsRenderer
-        // so we'll just use a dummy default style for width calculation
+        let split_buffers = view_state.open_buffers.clone();
 
-        // Calculate widths of tabs (and separators)
-        let mut tab_layout_info: Vec<(usize, bool)> = Vec::new();
-        for (idx, id) in split_buffers.iter().enumerate() {
-            let Some(state) = buffers.get(id) else {
-                continue;
-            };
+        // Use the shared function to calculate tab widths (same as render_for_split)
+        let (tab_widths, rendered_buffer_ids) = crate::view::ui::tabs::calculate_tab_widths(
+            &split_buffers,
+            &self.buffers,
+            &self.buffer_metadata,
+            &self.composite_buffers,
+        );
 
-            let name = if let Some(metadata) = buffer_metadata.get(id) {
-                metadata.display_name.as_str()
-            } else {
-                state
-                    .buffer
-                    .file_path()
-                    .and_then(|p| p.file_name())
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("[No Name]")
-            };
-
-            let modified_indicator_width = if state.buffer.is_modified() { 1 } else { 0 };
-            let tab_width = 2 + name.chars().count() + modified_indicator_width; // " {name}{modified} "
-            let is_active = *id == active_buffer;
-
-            tab_layout_info.push((tab_width, is_active));
-            if idx < split_buffers.len() - 1 {
-                tab_layout_info.push((1, false)); // separator
-            }
-        }
-
-        let total_tabs_width: usize = tab_layout_info.iter().map(|(w, _)| w).sum();
+        let total_tabs_width: usize = tab_widths.iter().sum();
         let max_visible_width = available_width as usize;
 
-        let tab_widths: Vec<usize> = tab_layout_info.iter().map(|(w, _)| *w).collect();
-        let active_tab_index = tab_layout_info.iter().position(|(_, is_active)| *is_active);
+        // Find the active tab index among rendered buffers
+        // Note: tab_widths includes separators, so we need to map buffer index to width index
+        let active_tab_index = rendered_buffer_ids
+            .iter()
+            .position(|id| *id == active_buffer);
 
-        let new_scroll_offset = if let Some(idx) = active_tab_index {
-            crate::view::ui::tabs::compute_tab_scroll_offset(
+        // Map buffer index to width index (accounting for separators)
+        // Widths are: [sep?, tab0, sep, tab1, sep, tab2, ...]
+        // First tab has no separator before it, subsequent tabs have separator before
+        let active_width_index = active_tab_index.map(|buf_idx| {
+            if buf_idx == 0 {
+                0
+            } else {
+                // Each tab after the first has a separator before it
+                // So tab N is at position 2*N (sep before tab1 is at 1, tab1 at 2, sep before tab2 at 3, tab2 at 4, etc.)
+                // Wait, the structure is: [tab0, sep, tab1, sep, tab2]
+                // So tab N (0-indexed) is at position 2*N
+                buf_idx * 2
+            }
+        });
+
+        // Calculate offset to bring active tab into view
+        let old_offset = view_state.tab_scroll_offset;
+        let new_scroll_offset = if let Some(idx) = active_width_index {
+            crate::view::ui::tabs::scroll_to_show_tab(
                 &tab_widths,
                 idx,
-                max_visible_width,
                 view_state.tab_scroll_offset,
-                1, // separator width
+                max_visible_width,
             )
         } else {
             view_state
@@ -3898,6 +3947,14 @@ impl Editor {
                 .min(total_tabs_width.saturating_sub(max_visible_width))
         };
 
+        tracing::debug!(
+            "  -> offset: {} -> {} (idx={:?}, max_width={}, total={})",
+            old_offset,
+            new_scroll_offset,
+            active_width_index,
+            max_visible_width,
+            total_tabs_width
+        );
         view_state.tab_scroll_offset = new_scroll_offset;
     }
 

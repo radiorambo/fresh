@@ -9,6 +9,7 @@
 use super::types::TabDropZone;
 use super::Editor;
 use crate::model::event::{BufferId, SplitDirection, SplitId};
+use crate::view::ui::tabs::TabHit;
 use anyhow::Result as AnyhowResult;
 use rust_i18n::t;
 
@@ -49,10 +50,11 @@ impl Editor {
         source_split_id: SplitId,
     ) -> Option<TabDropZone> {
         // First check if we're over a tab bar (for reordering/moving to another split)
-        for (split_id, _buffer_id, tab_row, start_col, end_col, _close_start) in
-            &self.cached_layout.tab_areas
-        {
-            if row == *tab_row && col >= *start_col && col < *end_col {
+        for (split_id, tab_layout) in &self.cached_layout.tab_layouts {
+            if matches!(
+                tab_layout.hit_test(col, row),
+                Some(TabHit::TabName(_) | TabHit::CloseButton(_))
+            ) {
                 // Find the index where this tab would be inserted
                 let insert_idx = self.find_tab_insert_index(*split_id, col);
                 return Some(TabDropZone::TabBar(*split_id, insert_idx));
@@ -119,23 +121,18 @@ impl Editor {
 
     /// Find the index where a tab should be inserted based on mouse x position
     fn find_tab_insert_index(&self, split_id: SplitId, col: u16) -> Option<usize> {
-        // Find all tabs in this split and determine insertion point
-        let tabs_in_split: Vec<_> = self
-            .cached_layout
-            .tab_areas
-            .iter()
-            .filter(|(sid, _, _, _, _, _)| *sid == split_id)
-            .collect();
+        // Get the tab layout for this split
+        let tab_layout = self.cached_layout.tab_layouts.get(&split_id)?;
 
-        if tabs_in_split.is_empty() {
+        if tab_layout.tabs.is_empty() {
             return Some(0);
         }
 
         // Find the tab we're over and determine if we're in the left or right half
-        for (idx, (_sid, _bid, _row, start_col, end_col, _close)) in
-            tabs_in_split.iter().enumerate()
-        {
-            if col >= *start_col && col < *end_col {
+        for (idx, tab_hit) in tab_layout.tabs.iter().enumerate() {
+            let start_col = tab_hit.tab_area.x;
+            let end_col = start_col + tab_hit.tab_area.width;
+            if col >= start_col && col < end_col {
                 let mid = (start_col + end_col) / 2;
                 if col < mid {
                     return Some(idx);
@@ -146,7 +143,7 @@ impl Editor {
         }
 
         // If past all tabs, insert at end
-        Some(tabs_in_split.len())
+        Some(tab_layout.tabs.len())
     }
 
     /// Execute a tab drop action

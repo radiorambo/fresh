@@ -31,9 +31,21 @@ fresh Cargo.toml src/lib.rs:100:5
 
 The `file:line:col` syntax is useful for jumping directly to compiler errors or search results.
 
+### CLI Tools
+
+Fresh includes command-line tools for package development:
+
+```bash
+# Create a new plugin, theme, or language pack project
+fresh --init
+
+# Validate a theme file (requires: pip install jsonschema)
+./scripts/validate-theme.sh path/to/theme.json
+```
+
 ## Core Concepts
 
-*   **The Command Palette:** The command palette is your central hub for accessing all of Fresh's features. Press `Ctrl+P` to open it, and then start typing to search for commands.
+*   **The Command Palette:** Press `Ctrl+P` to open the command palette - your central hub for navigating files, running commands, switching buffers, and jumping to lines. Use prefix characters to switch modes (see [Command Palette](../features/index.md#command-palette)).
 *   **Buffers:** Each open file is represented as a buffer. You can have multiple buffers open at once and switch between them.
 *   **Splits:** You can split your editor view horizontally or vertically to view multiple buffers at once.
-*   **The Status Bar:** The status bar at the bottom of the screen displays information about the current buffer, including the file name, cursor position, and Git branch.
+*   **The Status Bar:** The status bar at the bottom of the screen displays information about the current buffer, including the file name, cursor position, and Git branch. Click on status messages to view the full message history.

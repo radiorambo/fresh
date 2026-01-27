@@ -13,6 +13,8 @@
 //! - `file_browser` - File open dialog popup
 
 // WASM-compatible modules (pure rendering, no runtime deps)
+pub mod focus;
+pub mod layout;
 pub mod scroll_panel;
 pub mod scrollbar;
 pub mod text_edit;
@@ -41,8 +43,10 @@ pub mod tabs;
 pub use file_browser::{FileBrowserLayout, FileBrowserRenderer};
 #[cfg(feature = "runtime")]
 pub use file_explorer::FileExplorerRenderer;
+pub use focus::FocusManager;
+pub use layout::point_in_rect;
 #[cfg(feature = "runtime")]
-pub use menu::{context_keys, MenuContext, MenuRenderer, MenuState};
+pub use menu::{context_keys, MenuContext, MenuHit, MenuLayout, MenuRenderer, MenuState};
 #[cfg(feature = "runtime")]
 pub use menu_input::MenuInputHandler;
 pub use scroll_panel::{
@@ -56,5 +60,5 @@ pub use status_bar::{truncate_path, StatusBarLayout, StatusBarRenderer, Truncate
 #[cfg(feature = "runtime")]
 pub use suggestions::SuggestionsRenderer;
 #[cfg(feature = "runtime")]
-pub use tabs::TabsRenderer;
+pub use tabs::{TabHit, TabHitArea, TabLayout, TabsRenderer};
 pub use text_edit::TextEdit;

@@ -283,8 +283,9 @@ impl Editor {
         self.copy_selection();
 
         if has_selection {
-            // Original behavior: delete selected text
-            let deletions: Vec<_> = {
+            // Delete selected text from all cursors
+            // IMPORTANT: Sort deletions by position to ensure we process from end to start
+            let mut deletions: Vec<_> = {
                 let state = self.active_state();
                 state
                     .cursors
@@ -292,6 +293,8 @@ impl Editor {
                     .filter_map(|(_, c)| c.selection_range())
                     .collect()
             };
+            // Sort by start position so reverse iteration processes from end to start
+            deletions.sort_by_key(|r| r.start);
 
             let state = self.active_state_mut();
             let primary_id = state.cursors.primary_id();
@@ -321,7 +324,8 @@ impl Editor {
             let estimated_line_length = 80;
 
             // Collect line ranges for each cursor
-            let deletions: Vec<_> = {
+            // IMPORTANT: Sort deletions by position to ensure we process from end to start
+            let mut deletions: Vec<_> = {
                 let state = self.active_state_mut();
                 let positions: Vec<_> = state.cursors.iter().map(|(_, c)| c.position).collect();
 
@@ -337,6 +341,8 @@ impl Editor {
                     })
                     .collect()
             };
+            // Sort by start position so reverse iteration processes from end to start
+            deletions.sort_by_key(|r| r.start);
 
             let state = self.active_state_mut();
             let primary_id = state.cursors.primary_id();

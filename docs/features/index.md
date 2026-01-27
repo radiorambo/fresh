@@ -10,9 +10,25 @@ Fresh provides a powerful set of editing features to help you be more productive
 *   **Advanced Selection:** Fresh provides a variety of ways to select text, including word selection (`Ctrl+W`), line selection (`Ctrl+L`), and expanding the selection incrementally.
 *   **Unlimited Undo/Redo:** Fresh has a complete edit history, so you can undo and redo changes as much as you need to.
 
+### Command Palette
+
+Press `Ctrl+P` to open the command palette. Use prefix characters to switch modes:
+
+| Prefix | Mode | Description |
+|--------|------|-------------|
+| *(none)* | File finder | Fuzzy search for files in your project |
+| `>` | Commands | Search and run editor commands |
+| `#` | Buffers | Switch between open buffers by name |
+| `:` | Go to line | Jump to a specific line number |
+
+**Tips:**
+- A hints line at the bottom shows available prefixes
+- Press `Tab` to accept the top suggestion
+- Type `>` to access commands, or `#` followed by a buffer name to switch files
+
 ### Navigation
 
-*   **Go to Definition:** Use the command palette (`Ctrl+P`) and search for "Go to Definition" to jump to the definition of a symbol under the cursor (requires LSP).
+*   **Go to Definition:** Use the command palette (`Ctrl+P >`) and search for "Go to Definition" to jump to the definition of a symbol under the cursor (requires LSP).
 *   **Position History:** Navigate back and forward through your edit locations using `Alt+Left` and `Alt+Right`.
 
 ### File Explorer

@@ -1372,7 +1372,8 @@ fn test_status_bar_hidden_during_suggestions() {
     let screen_before = harness.screen_to_string();
     assert!(
         screen_before.contains("Palette:"),
-        "Status bar should show 'Palette:' indicator before command palette"
+        "Status bar should show 'Palette:' indicator before command palette. Screen:\n{}",
+        screen_before
     );
 
     // Open command palette (which has suggestions)
@@ -1381,8 +1382,8 @@ fn test_status_bar_hidden_during_suggestions() {
         .unwrap();
     harness.render().unwrap();
 
-    // Verify suggestions are shown
-    harness.assert_screen_contains("Command:");
+    // Verify suggestions are shown (Quick Open uses ">" prefix in hints)
+    harness.assert_screen_contains(">command");
 
     // Status bar should be hidden when suggestions are visible
     // The "Palette:" indicator should not be visible
@@ -1398,7 +1399,8 @@ fn test_status_bar_hidden_during_suggestions() {
     let screen_after = harness.screen_to_string();
     assert!(
         screen_after.contains("Palette:"),
-        "Status bar should show 'Palette:' indicator after closing command palette"
+        "Status bar should show 'Palette:' indicator after closing command palette. Screen:\n{}",
+        screen_after
     );
 }
 
@@ -2226,4 +2228,161 @@ fn test_f3_continues_searching_after_buffer_modification() {
         "F3 should go to second 'foo' (position 8). Got: {}",
         cursor_second
     );
+}
+
+/// Test searching for double underscores (common in Python __init__, __name__, etc.)
+#[test]
+fn test_search_double_underscore() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("test.py");
+
+    // Create a Python file with double underscores
+    let content = "def __init__(self):\n    self.__name__ = 'test'\n    __special__ = True\n";
+    std::fs::write(&file_path, content).unwrap();
+
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.open_file(&file_path).unwrap();
+    harness.render().unwrap();
+
+    // Trigger search with Ctrl+F
+    harness
+        .send_key(KeyCode::Char('f'), KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+
+    // Search for __init__
+    harness.type_text("__init__").unwrap();
+    harness.render().unwrap();
+
+    // Confirm search
+    harness
+        .send_key(KeyCode::Enter, KeyModifiers::NONE)
+        .unwrap();
+    harness.process_async_and_render().unwrap();
+
+    // Should find the match (cursor moves to position of "__init__")
+    let cursor_pos = harness.cursor_position();
+    // "__init__" starts at position 4 (after "def ")
+    assert_eq!(
+        cursor_pos, 4,
+        "Should find '__init__' at position 4, got {}",
+        cursor_pos
+    );
+    // Note: We don't check status bar message as it may be truncated on systems
+    // with long temp paths (e.g., macOS /private/var/folders/...)
+}
+
+/// Test searching for just double underscore (__)
+#[test]
+fn test_search_double_underscore_prefix() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("test.py");
+
+    // Create a file with multiple double underscores
+    let content = "__init__, __name__, __file__\n";
+    std::fs::write(&file_path, content).unwrap();
+
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.open_file(&file_path).unwrap();
+    harness.render().unwrap();
+
+    // Search for just "__"
+    harness
+        .send_key(KeyCode::Char('f'), KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+    harness.type_text("__").unwrap();
+    harness.render().unwrap();
+
+    // Confirm search
+    harness
+        .send_key(KeyCode::Enter, KeyModifiers::NONE)
+        .unwrap();
+    harness.process_async_and_render().unwrap();
+
+    // Should find the first match at position 0
+    let cursor_pos = harness.cursor_position();
+    assert_eq!(
+        cursor_pos, 0,
+        "Should find first '__' at position 0, got {}",
+        cursor_pos
+    );
+    // Note: We don't check status bar message as it may be truncated on systems
+    // with long temp paths (e.g., macOS /private/var/folders/...)
+}
+
+/// Test searching for angle bracket (common in generics like Vec<T>)
+#[test]
+fn test_search_angle_bracket() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("test.rs");
+
+    // Create a Rust file with angle brackets
+    let content = "let x: Vec<String> = Vec::new();\nlet y: Option<i32> = None;\n";
+    std::fs::write(&file_path, content).unwrap();
+
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.open_file(&file_path).unwrap();
+    harness.render().unwrap();
+
+    // Search for "Vec<"
+    harness
+        .send_key(KeyCode::Char('f'), KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+    harness.type_text("Vec<").unwrap();
+    harness.render().unwrap();
+
+    // Confirm search
+    harness
+        .send_key(KeyCode::Enter, KeyModifiers::NONE)
+        .unwrap();
+    harness.process_async_and_render().unwrap();
+
+    // Should find the match - "Vec<" starts at position 7 (after "let x: ")
+    let cursor_pos = harness.cursor_position();
+    assert_eq!(
+        cursor_pos, 7,
+        "Should find 'Vec<' at position 7, got {}",
+        cursor_pos
+    );
+}
+
+/// Test searching for closing angle bracket with type
+#[test]
+fn test_search_with_closing_angle_bracket() {
+    let temp_dir = TempDir::new().unwrap();
+    let file_path = temp_dir.path().join("test.rs");
+
+    // Create content with generic types
+    let content = "plugin_name<T>\nplugin_name<U>\n";
+    std::fs::write(&file_path, content).unwrap();
+
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+    harness.open_file(&file_path).unwrap();
+    harness.render().unwrap();
+
+    // Search for "plugin_name<"
+    harness
+        .send_key(KeyCode::Char('f'), KeyModifiers::CONTROL)
+        .unwrap();
+    harness.render().unwrap();
+    harness.type_text("plugin_name<").unwrap();
+    harness.render().unwrap();
+
+    // Confirm search
+    harness
+        .send_key(KeyCode::Enter, KeyModifiers::NONE)
+        .unwrap();
+    harness.process_async_and_render().unwrap();
+
+    // Should find first match at position 0
+    let cursor_pos = harness.cursor_position();
+    assert_eq!(
+        cursor_pos, 0,
+        "Should find 'plugin_name<' at position 0, got {}",
+        cursor_pos
+    );
+    // Note: We don't check status bar message as it may be truncated on systems
+    // with long temp paths (e.g., macOS /private/var/folders/...)
 }

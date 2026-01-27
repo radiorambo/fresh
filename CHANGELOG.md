@@ -1,5 +1,46 @@
 # Release Notes
 
+## 0.1.90
+
+### Features
+
+* **Package Manager**: Browse, install, and uninstall plugins, themes, and language packs from the [official registry](https://github.com/sinelaw/fresh-plugins-registry). Features search, package validation, background registry sync with local caching, and automatic theme reloading after install.
+  - **Language packs** bundle syntax highlighting (`.sublime-syntax`), language settings, and LSP server configuration
+  - Filter by package type: Plugins, Themes, Languages
+  - See [fresh-plugins](https://github.com/sinelaw/fresh-plugins) for example packages
+
+* **Command Palette** (Ctrl+P): Unified prompt for navigating files, commands, buffers, and lines. Use prefix characters to switch modes:
+  - No prefix: fuzzy file finder
+  - `>` prefix: commands
+  - `#` prefix: switch open buffers by name
+  - `:` prefix: go to line number
+
+  Includes hints line showing available prefixes and Tab completion.
+
+* **Status Message Log**: Click status bar messages to view full message history.
+
+* **Package Scaffolding (`--init`)**: Create new plugin, theme, or language pack projects with `fresh --init`. Interactive wizard generates package.json, entry files, and proper directory structure.
+
+* **Theme Schema**: JSON Schema for theme validation. Use `scripts/validate-theme.sh` or any JSON Schema validator.
+
+### Bug Fixes
+
+* **Bracket Expansion**: Pressing Enter between matching brackets expands them with proper indentation (#629).
+* **Ctrl+D Word Selection**: Ctrl+D selects the entire word when no selection exists.
+* **Ctrl+Right Word Jump**: Ctrl+Right jumps to word end, matching Ctrl+Shift+Right behavior.
+* **Alt+N/P Search**: Search invalidates when cursor moves manually, preventing stale matches.
+* **Theme Fallback**: Falls back to default theme when configured theme is not found.
+* **Cross-Platform Theme Paths**: Theme path handling works correctly on Windows.
+
+### Internal
+
+* Moved calculator, color-highlighter, todo-highlighter plugins to external repository (installable via package manager).
+* Moved catppuccin and xscriptor themes to external repository (installable via package manager).
+* Added WASM feature flag for shared editor core modules.
+* Italian translation update (#839).
+
+---
+
 ## 0.1.88
 
 ### Features

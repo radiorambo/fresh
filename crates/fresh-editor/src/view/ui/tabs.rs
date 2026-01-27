@@ -4,6 +4,7 @@ use crate::app::BufferMetadata;
 use crate::model::event::BufferId;
 use crate::primitives::display_width::str_width;
 use crate::state::EditorState;
+use crate::view::ui::layout::point_in_rect;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -11,49 +12,234 @@ use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 use std::collections::HashMap;
 
+/// Hit area for a single tab
+#[derive(Debug, Clone)]
+pub struct TabHitArea {
+    /// The buffer ID this tab represents
+    pub buffer_id: BufferId,
+    /// The area covering the tab name (clickable to switch to buffer)
+    pub tab_area: Rect,
+    /// The area covering the close button
+    pub close_area: Rect,
+}
+
+/// Layout information for hit testing tab interactions
+///
+/// Returned by `TabsRenderer::render_for_split()` to enable mouse hit testing
+/// without duplicating position calculations.
+#[derive(Debug, Clone, Default)]
+pub struct TabLayout {
+    /// Hit areas for each visible tab
+    pub tabs: Vec<TabHitArea>,
+    /// The full tab bar area
+    pub bar_area: Rect,
+    /// Hit area for the left scroll button (if shown)
+    pub left_scroll_area: Option<Rect>,
+    /// Hit area for the right scroll button (if shown)
+    pub right_scroll_area: Option<Rect>,
+}
+
+/// Hit test result for tab interactions
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TabHit {
+    /// Hit the tab name area (click to switch buffer)
+    TabName(BufferId),
+    /// Hit the close button area
+    CloseButton(BufferId),
+    /// Hit the tab bar background
+    BarBackground,
+    /// Hit the left scroll button
+    ScrollLeft,
+    /// Hit the right scroll button
+    ScrollRight,
+}
+
+impl TabLayout {
+    /// Create a new empty layout
+    pub fn new(bar_area: Rect) -> Self {
+        Self {
+            tabs: Vec::new(),
+            bar_area,
+            left_scroll_area: None,
+            right_scroll_area: None,
+        }
+    }
+
+    /// Perform a hit test to determine what element is at the given position
+    pub fn hit_test(&self, x: u16, y: u16) -> Option<TabHit> {
+        // Check scroll buttons first (they're at the edges)
+        if let Some(left_area) = self.left_scroll_area {
+            tracing::debug!(
+                "Tab hit_test: checking left_scroll_area {:?} against ({}, {})",
+                left_area,
+                x,
+                y
+            );
+            if point_in_rect(left_area, x, y) {
+                tracing::debug!("Tab hit_test: HIT ScrollLeft");
+                return Some(TabHit::ScrollLeft);
+            }
+        }
+        if let Some(right_area) = self.right_scroll_area {
+            tracing::debug!(
+                "Tab hit_test: checking right_scroll_area {:?} against ({}, {})",
+                right_area,
+                x,
+                y
+            );
+            if point_in_rect(right_area, x, y) {
+                tracing::debug!("Tab hit_test: HIT ScrollRight");
+                return Some(TabHit::ScrollRight);
+            }
+        }
+
+        for tab in &self.tabs {
+            // Check close button first (it's inside the tab area)
+            if point_in_rect(tab.close_area, x, y) {
+                return Some(TabHit::CloseButton(tab.buffer_id));
+            }
+            // Check tab area
+            if point_in_rect(tab.tab_area, x, y) {
+                return Some(TabHit::TabName(tab.buffer_id));
+            }
+        }
+
+        // Check bar background
+        if point_in_rect(self.bar_area, x, y) {
+            return Some(TabHit::BarBackground);
+        }
+
+        None
+    }
+}
+
 /// Renders the tab bar showing open buffers
 pub struct TabsRenderer;
 
-/// Compute a scroll offset that keeps the active tab fully visible.
-/// `tab_widths` should include separators; `active_idx` refers to the tab index (not counting separators).
-pub fn compute_tab_scroll_offset(
+/// Compute scroll offset to bring the active tab into view.
+/// Always scrolls to put the active tab at a comfortable position.
+/// `tab_widths` includes separators between tabs.
+pub fn scroll_to_show_tab(
     tab_widths: &[usize],
     active_idx: usize,
+    _current_offset: usize,
     max_width: usize,
-    current_offset: usize,
-    padding_between_tabs: usize,
 ) -> usize {
-    if tab_widths.is_empty() || max_width == 0 {
+    if tab_widths.is_empty() || max_width == 0 || active_idx >= tab_widths.len() {
         return 0;
     }
 
-    let total_width: usize = tab_widths.iter().sum::<usize>()
-        + padding_between_tabs.saturating_mul(tab_widths.len().saturating_sub(1));
-    let mut tab_start = 0usize;
-    let mut tab_end = 0usize;
+    let total_width: usize = tab_widths.iter().sum();
+    let tab_start: usize = tab_widths[..active_idx].iter().sum();
+    let tab_width = tab_widths[active_idx];
+    let tab_end = tab_start + tab_width;
 
-    // Walk through widths to locate active tab boundaries.
-    for (tab_counter, w) in tab_widths.iter().enumerate() {
-        let next = tab_start + *w;
-        if tab_counter == active_idx {
-            tab_end = next;
-            break;
+    // Try to put the active tab about 1/4 from the left edge
+    let preferred_position = max_width / 4;
+    let target_offset = tab_start.saturating_sub(preferred_position);
+
+    // Clamp to valid range (0 to max_offset)
+    let max_offset = total_width.saturating_sub(max_width);
+    let mut result = target_offset.min(max_offset);
+
+    // But ensure the tab is fully visible - if clamping pushed the tab off screen,
+    // adjust to show at least the tab
+    if tab_end > result + max_width {
+        // Tab is past right edge, scroll right to show it
+        result = tab_end.saturating_sub(max_width);
+    }
+
+    tracing::debug!(
+        "scroll_to_show_tab: idx={}, tab={}..{}, target={}, result={}, total={}, max_width={}, max_offset={}",
+        active_idx, tab_start, tab_end, target_offset, result, total_width, max_width, max_offset
+    );
+
+    result
+}
+
+/// Calculate tab widths for scroll offset calculations.
+/// Returns (tab_widths, rendered_buffer_ids) where tab_widths includes separators.
+/// This uses the same logic as render_for_split to ensure consistency.
+pub fn calculate_tab_widths(
+    split_buffers: &[BufferId],
+    buffers: &HashMap<BufferId, EditorState>,
+    buffer_metadata: &HashMap<BufferId, BufferMetadata>,
+    composite_buffers: &HashMap<BufferId, crate::model::composite_buffer::CompositeBuffer>,
+) -> (Vec<usize>, Vec<BufferId>) {
+    let mut tab_widths: Vec<usize> = Vec::new();
+    let mut rendered_buffer_ids: Vec<BufferId> = Vec::new();
+
+    for id in split_buffers.iter() {
+        // Check if this is a regular buffer or a composite buffer
+        let is_regular_buffer = buffers.contains_key(id);
+        let is_composite_buffer = composite_buffers.contains_key(id);
+
+        if !is_regular_buffer && !is_composite_buffer {
+            continue;
         }
-        tab_start = next + padding_between_tabs;
+
+        // Skip buffers that are marked as hidden from tabs
+        if let Some(meta) = buffer_metadata.get(id) {
+            if meta.hidden_from_tabs {
+                continue;
+            }
+        }
+
+        let meta = buffer_metadata.get(id);
+        let is_terminal = meta
+            .and_then(|m| m.virtual_mode())
+            .map(|mode| mode == "terminal")
+            .unwrap_or(false);
+
+        // Use same name resolution logic as render_for_split
+        let name = if is_composite_buffer {
+            meta.map(|m| m.display_name.as_str())
+        } else if is_terminal {
+            meta.map(|m| m.display_name.as_str())
+        } else {
+            buffers
+                .get(id)
+                .and_then(|state| state.buffer.file_path())
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .or_else(|| meta.map(|m| m.display_name.as_str()))
+        }
+        .unwrap_or("[No Name]");
+
+        // Calculate modified indicator
+        let modified = if is_composite_buffer {
+            ""
+        } else if let Some(state) = buffers.get(id) {
+            if state.buffer.is_modified() {
+                "*"
+            } else {
+                ""
+            }
+        } else {
+            ""
+        };
+
+        let binary_indicator = if buffer_metadata.get(id).map(|m| m.binary).unwrap_or(false) {
+            " [BIN]"
+        } else {
+            ""
+        };
+
+        // Same format as render_for_split: " {name}{modified}{binary_indicator} " + "× "
+        let tab_name_text = format!(" {name}{modified}{binary_indicator} ");
+        let close_text = "× ";
+        let tab_width = str_width(&tab_name_text) + str_width(close_text);
+
+        // Add separator if not first tab
+        if !rendered_buffer_ids.is_empty() {
+            tab_widths.push(1); // separator
+        }
+
+        tab_widths.push(tab_width);
+        rendered_buffer_ids.push(*id);
     }
 
-    // If we didn't find the tab, keep current offset.
-    if tab_end == 0 {
-        return current_offset.min(total_width.saturating_sub(max_width));
-    }
-
-    // Basic rule: stick the active tab into view, prefer left-aligned start unless it overflows.
-    let mut offset = tab_start;
-    if tab_end.saturating_sub(offset) > max_width {
-        offset = tab_end.saturating_sub(max_width);
-    }
-
-    offset.min(total_width.saturating_sub(max_width))
+    (tab_widths, rendered_buffer_ids)
 }
 
 impl TabsRenderer {
@@ -71,8 +257,7 @@ impl TabsRenderer {
     /// * `hovered_tab` - Optional (buffer_id, is_close_button) if a tab is being hovered
     ///
     /// # Returns
-    /// Vec of (buffer_id, tab_start_col, tab_end_col, close_start_col) for each visible tab.
-    /// These are absolute screen column positions for hit testing.
+    /// `TabLayout` containing hit areas for mouse interaction.
     #[allow(clippy::too_many_arguments)]
     pub fn render_for_split(
         frame: &mut Frame,
@@ -86,7 +271,8 @@ impl TabsRenderer {
         is_active_split: bool,
         tab_scroll_offset: usize,
         hovered_tab: Option<(BufferId, bool)>, // (buffer_id, is_close_button)
-    ) -> Vec<(BufferId, u16, u16, u16)> {
+    ) -> TabLayout {
+        let mut layout = TabLayout::new(area);
         const SCROLL_INDICATOR_LEFT: &str = "<";
         const SCROLL_INDICATOR_RIGHT: &str = ">";
         const SCROLL_INDICATOR_WIDTH: usize = 1; // Width of "<" or ">"
@@ -264,47 +450,20 @@ impl TabsRenderer {
             tab_widths.push(end.saturating_sub(*start));
         }
 
-        let mut offset = tab_scroll_offset.min(total_width.saturating_sub(max_width));
-        if let Some(active_idx) = active_tab_idx {
-            offset = compute_tab_scroll_offset(
-                &tab_widths,
-                active_idx,
-                max_width,
-                tab_scroll_offset,
-                1, // separator width between tabs
-            );
-        }
+        // Use the scroll offset directly - ensure_active_tab_visible handles the calculation
+        // Only clamp to prevent negative or extreme values
+        let max_offset = total_width.saturating_sub(max_width);
+        let offset = tab_scroll_offset.min(total_width);
+        tracing::debug!(
+            "render_for_split: tab_scroll_offset={}, max_offset={}, offset={}, total={}, max_width={}",
+            tab_scroll_offset, max_offset, offset, total_width, max_width
+        );
 
-        // Indicators reserve space; adjust once so the active tab still fits.
-        let mut show_left = offset > 0;
-        let mut show_right = total_width.saturating_sub(offset) > max_width;
-        let mut available = max_width
+        // Indicators reserve space based on scroll position
+        let show_left = offset > 0;
+        let show_right = total_width.saturating_sub(offset) > max_width;
+        let available = max_width
             .saturating_sub((show_left as usize + show_right as usize) * SCROLL_INDICATOR_WIDTH);
-
-        if let Some(active_idx) = active_tab_idx {
-            let (start, end, _close_start) = tab_ranges[active_idx];
-            let active_width = end.saturating_sub(start);
-            if start == 0 && active_width >= max_width {
-                show_left = false;
-                show_right = false;
-                available = max_width;
-            }
-
-            if end.saturating_sub(offset) > available {
-                offset = end.saturating_sub(available);
-                offset = offset.min(total_width.saturating_sub(available));
-                show_left = offset > 0;
-                show_right = total_width.saturating_sub(offset) > available;
-                available = max_width.saturating_sub(
-                    (show_left as usize + show_right as usize) * SCROLL_INDICATOR_WIDTH,
-                );
-            }
-            if start < offset {
-                offset = start;
-                show_left = offset > 0;
-                show_right = total_width.saturating_sub(offset) > available;
-            }
-        }
 
         let mut rendered_width = 0;
         let mut skip_chars_count = offset;
@@ -362,6 +521,13 @@ impl TabsRenderer {
             }
         }
 
+        // Track where the right indicator will be rendered (before adding it)
+        let right_indicator_x = if show_right && rendered_width < max_width {
+            Some(area.x + rendered_width as u16)
+        } else {
+            None
+        };
+
         if show_right && rendered_width < max_width {
             current_spans.push(Span::styled(
                 SCROLL_INDICATOR_RIGHT,
@@ -389,7 +555,17 @@ impl TabsRenderer {
         // 3. The base area.x position
         let left_indicator_offset = if show_left { SCROLL_INDICATOR_WIDTH } else { 0 };
 
-        let mut hit_areas = Vec::new();
+        // Set scroll button areas if shown
+        if show_left {
+            layout.left_scroll_area =
+                Some(Rect::new(area.x, area.y, SCROLL_INDICATOR_WIDTH as u16, 1));
+        }
+        if let Some(right_x) = right_indicator_x {
+            // Right scroll button is at the position where it was actually rendered
+            layout.right_scroll_area =
+                Some(Rect::new(right_x, area.y, SCROLL_INDICATOR_WIDTH as u16, 1));
+        }
+
         for (idx, buffer_id) in rendered_buffer_ids.iter().enumerate() {
             let (logical_start, logical_end, logical_close_start) = tab_ranges[idx];
 
@@ -430,10 +606,18 @@ impl TabsRenderer {
                 screen_end
             };
 
-            hit_areas.push((*buffer_id, screen_start, screen_end, screen_close_start));
+            // Build tab hit area using Rects
+            let tab_width = screen_end.saturating_sub(screen_start);
+            let close_width = screen_end.saturating_sub(screen_close_start);
+
+            layout.tabs.push(TabHitArea {
+                buffer_id: *buffer_id,
+                tab_area: Rect::new(screen_start, area.y, tab_width, 1),
+                close_area: Rect::new(screen_close_start, area.y, close_width, 1),
+            });
         }
 
-        hit_areas
+        layout
     }
 
     /// Legacy render function for backward compatibility
@@ -470,29 +654,59 @@ impl TabsRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_tab_scroll_offset;
+    use super::*;
+    use crate::model::event::BufferId;
 
     #[test]
-    fn offset_clamped_to_zero_when_active_first() {
-        let widths = vec![5, 5, 5]; // tab widths
-        let offset = compute_tab_scroll_offset(&widths, 0, 6, 10, 1);
+    fn scroll_to_show_active_first_tab() {
+        // Active is first tab, should scroll left to show it
+        let widths = vec![5, 5, 5];
+        let offset = scroll_to_show_tab(&widths, 0, 10, 20);
+        // First tab starts at 0, should scroll to show it
         assert_eq!(offset, 0);
     }
 
     #[test]
-    fn offset_moves_to_show_active_tab() {
-        let widths = vec![5, 8, 6]; // active is the middle tab (index 1)
-        let offset = compute_tab_scroll_offset(&widths, 1, 6, 0, 1);
-        // Active tab width 8 cannot fully fit into width 6; expect it to right-align within view.
-        assert_eq!(offset, 8);
+    fn scroll_to_show_tab_already_visible() {
+        // Tab is already visible, offset should stay the same
+        let widths = vec![5, 5, 5];
+        let offset = scroll_to_show_tab(&widths, 1, 0, 20);
+        // Tab 1 starts at 5, ends at 10, visible in 0..20
+        assert_eq!(offset, 0);
     }
 
     #[test]
-    fn offset_respects_total_width_bounds() {
-        let widths = vec![3, 3, 3, 3];
-        let offset = compute_tab_scroll_offset(&widths, 3, 4, 100, 1);
-        let total: usize = widths.iter().sum();
-        let total_with_padding = total + 3; // three gaps of width 1
-        assert!(offset <= total_with_padding.saturating_sub(4));
+    fn scroll_to_show_tab_on_right() {
+        // Tab is to the right, need to scroll right
+        let widths = vec![10, 10, 10];
+        let offset = scroll_to_show_tab(&widths, 2, 0, 15);
+        // Tab 2 starts at 20, ends at 30; need to scroll to show it
+        assert!(offset > 0);
+    }
+
+    #[test]
+    fn test_tab_layout_hit_test() {
+        let bar_area = Rect::new(0, 0, 80, 1);
+        let mut layout = TabLayout::new(bar_area);
+
+        let buf1 = BufferId(1);
+
+        layout.tabs.push(TabHitArea {
+            buffer_id: buf1,
+            tab_area: Rect::new(0, 0, 16, 1),
+            close_area: Rect::new(12, 0, 4, 1),
+        });
+
+        // Hit tab name
+        assert_eq!(layout.hit_test(5, 0), Some(TabHit::TabName(buf1)));
+
+        // Hit close button
+        assert_eq!(layout.hit_test(13, 0), Some(TabHit::CloseButton(buf1)));
+
+        // Hit bar background
+        assert_eq!(layout.hit_test(50, 0), Some(TabHit::BarBackground));
+
+        // Outside everything
+        assert_eq!(layout.hit_test(50, 5), None);
     }
 }

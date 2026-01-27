@@ -1319,6 +1319,102 @@ fn test_click_clears_selection() {
     }
 }
 
+/// Test that shift+click extends selection
+#[test]
+fn test_shift_click_extends_selection() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+
+    // Delay to avoid double-click detection (use config value * 2 for safety margin)
+    let double_click_delay =
+        std::time::Duration::from_millis(harness.config().editor.double_click_time_ms * 2);
+
+    let content = "hello world test content\n";
+    let _fixture = harness.load_buffer_from_text(content).unwrap();
+    harness.render().unwrap();
+
+    let (content_first_row, _) = harness.content_area_rows();
+    let row = content_first_row as u16;
+    let gutter_width = 8; // Approximate gutter width
+
+    // Click to position cursor at start of "hello" (after gutter)
+    harness.mouse_click(gutter_width, row).unwrap();
+    harness.render().unwrap();
+
+    let pos_after_click = harness.cursor_position();
+    assert_eq!(
+        pos_after_click, 0,
+        "Cursor should be at start after clicking at gutter edge"
+    );
+
+    // Wait to avoid double-click detection
+    std::thread::sleep(double_click_delay);
+
+    // Shift+click at position 12 (around "world")
+    harness.mouse_shift_click(gutter_width + 12, row).unwrap();
+    harness.render().unwrap();
+
+    // Should now have a selection from 0 to 12
+    assert!(
+        harness.has_selection(),
+        "Should have selection after shift+click"
+    );
+
+    let selection_range = harness.get_selection_range();
+    assert!(
+        selection_range.is_some(),
+        "Selection range should be available"
+    );
+    let range = selection_range.unwrap();
+    assert_eq!(
+        range.start, 0,
+        "Selection should start at original click position"
+    );
+    assert!(
+        range.end > range.start,
+        "Selection should extend to shift+click position"
+    );
+}
+
+/// Test that shift+click can shrink selection when clicking before anchor
+#[test]
+fn test_shift_click_can_shrink_selection() {
+    let mut harness = EditorTestHarness::new(80, 24).unwrap();
+
+    let double_click_delay =
+        std::time::Duration::from_millis(harness.config().editor.double_click_time_ms * 2);
+
+    let content = "hello world test content\n";
+    let _fixture = harness.load_buffer_from_text(content).unwrap();
+    harness.render().unwrap();
+
+    let (content_first_row, _) = harness.content_area_rows();
+    let row = content_first_row as u16;
+    let gutter_width = 8;
+
+    // Create initial selection via drag from position 5 to 15
+    harness
+        .mouse_drag(gutter_width + 5, row, gutter_width + 15, row)
+        .unwrap();
+    harness.render().unwrap();
+
+    assert!(harness.has_selection(), "Should have selection after drag");
+    let initial_range = harness.get_selection_range().unwrap();
+    let initial_size = initial_range.end - initial_range.start;
+    assert!(initial_size > 0, "Initial selection should have size > 0");
+
+    std::thread::sleep(double_click_delay);
+
+    // Shift+click at position 10 (within original selection) to shrink it
+    harness.mouse_shift_click(gutter_width + 10, row).unwrap();
+    harness.render().unwrap();
+
+    // Still should have selection, but potentially different range
+    assert!(
+        harness.has_selection(),
+        "Should still have selection after shift+click"
+    );
+}
+
 /// Test tab hover with real files (which have line numbers, actual filenames, etc.)
 /// This more closely matches real-world usage
 #[test]

@@ -688,6 +688,11 @@ pub fn action_to_events(
     estimated_line_length: usize,
     viewport_height: u16,
 ) -> Option<Vec<Event>> {
+    // For virtual buffers with hidden cursors, ignore movement and editing actions
+    if !state.show_cursors && action.is_movement_or_editing() {
+        return None;
+    }
+
     let mut events = Vec::new();
 
     match action {
@@ -2256,6 +2261,7 @@ pub fn action_to_events(
         | Action::AddCursorAbove
         | Action::AddCursorBelow
         | Action::CommandPalette
+        | Action::QuickOpen
         | Action::ShowHelp
         | Action::ToggleLineWrap
         | Action::ToggleComposeMode
@@ -2270,6 +2276,7 @@ pub fn action_to_events(
         | Action::JumpToPreviousError
         | Action::ShowKeyboardShortcuts
         | Action::ShowWarnings
+        | Action::ShowStatusLog
         | Action::ShowLspStatus
         | Action::ClearWarnings
         | Action::SmartHome
@@ -2392,6 +2399,8 @@ pub fn action_to_events(
         | Action::Revert
         | Action::ToggleAutoRevert
         | Action::FormatBuffer
+        | Action::TrimTrailingWhitespace
+        | Action::EnsureFinalNewline
         | Action::OpenTerminal
         | Action::CloseTerminal
         | Action::FocusTerminal

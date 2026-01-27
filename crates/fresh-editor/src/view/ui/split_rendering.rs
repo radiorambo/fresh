@@ -253,6 +253,7 @@ impl DebugSpanTracker {
                         crate::view::overlay::OverlayFace::Background { .. } => "bg",
                         crate::view::overlay::OverlayFace::Foreground { .. } => "fg",
                         crate::view::overlay::OverlayFace::Style { .. } => "st",
+                        crate::view::overlay::OverlayFace::ThemedStyle { .. } => "ts",
                     };
                     tags.push(format!("<{}:{}-{}>", overlay_type, range.start, range.end));
                     self.active_overlays.push(range.clone());
@@ -634,6 +635,24 @@ fn compute_char_style(ctx: &CharStyleContext) -> CharStyleOutput {
             } => {
                 style = style.patch(*overlay_style);
             }
+            OverlayFace::ThemedStyle {
+                fallback_style,
+                fg_theme,
+                bg_theme,
+            } => {
+                let mut themed_style = *fallback_style;
+                if let Some(fg_key) = fg_theme {
+                    if let Some(color) = ctx.theme.resolve_theme_key(fg_key) {
+                        themed_style = themed_style.fg(color);
+                    }
+                }
+                if let Some(bg_key) = bg_theme {
+                    if let Some(color) = ctx.theme.resolve_theme_key(bg_key) {
+                        themed_style = themed_style.bg(color);
+                    }
+                }
+                style = style.patch(themed_style);
+            }
         }
     }
 
@@ -729,7 +748,7 @@ impl SplitRenderer {
             usize,
             usize,
         )>,
-        Vec<(crate::model::event::SplitId, BufferId, u16, u16, u16, u16)>,
+        HashMap<crate::model::event::SplitId, crate::view::ui::tabs::TabLayout>, // tab layouts per split
         Vec<(crate::model::event::SplitId, u16, u16, u16)>, // close split button areas
         Vec<(crate::model::event::SplitId, u16, u16, u16)>, // maximize split button areas
         HashMap<crate::model::event::SplitId, Vec<ViewLineMapping>>, // view line mappings for mouse clicks
@@ -743,7 +762,10 @@ impl SplitRenderer {
 
         // Collect areas for mouse handling
         let mut split_areas = Vec::new();
-        let mut all_tab_areas = Vec::new();
+        let mut tab_layouts: HashMap<
+            crate::model::event::SplitId,
+            crate::view::ui::tabs::TabLayout,
+        > = HashMap::new();
         let mut close_split_areas = Vec::new();
         let mut maximize_split_areas = Vec::new();
         let mut view_line_mappings: HashMap<crate::model::event::SplitId, Vec<ViewLineMapping>> =
@@ -769,7 +791,7 @@ impl SplitRenderer {
             // Only render tabs and split control buttons when tab bar is visible
             if tab_bar_visible {
                 // Render tabs for this split and collect hit areas
-                let tab_hit_areas = TabsRenderer::render_for_split(
+                let tab_layout = TabsRenderer::render_for_split(
                     frame,
                     layout.tabs_rect,
                     &split_buffers,
@@ -783,18 +805,9 @@ impl SplitRenderer {
                     tab_hover_for_split,
                 );
 
-                // Add tab row to hit areas (all tabs share the same row)
+                // Store the tab layout for this split
+                tab_layouts.insert(split_id, tab_layout);
                 let tab_row = layout.tabs_rect.y;
-                for (buf_id, start_col, end_col, close_start) in tab_hit_areas {
-                    all_tab_areas.push((
-                        split_id,
-                        buf_id,
-                        tab_row,
-                        start_col,
-                        end_col,
-                        close_start,
-                    ));
-                }
 
                 // Render split control buttons at the right side of tabs row
                 // Show maximize/unmaximize button when: multiple splits exist OR we're currently maximized
@@ -1031,7 +1044,7 @@ impl SplitRenderer {
 
         (
             split_areas,
-            all_tab_areas,
+            tab_layouts,
             close_split_areas,
             maximize_split_areas,
             view_line_mappings,
@@ -2871,6 +2884,14 @@ impl SplitRenderer {
             theme.semantic_highlight_bg,
         );
 
+        // Update bracket highlight overlays
+        state.bracket_highlight_overlay.update(
+            &state.buffer,
+            &mut state.overlays,
+            &mut state.marker_list,
+            primary_cursor_position,
+        );
+
         // Semantic tokens are stored as overlays so their ranges track edits.
         // Convert them into highlight spans for the render pipeline.
         let mut semantic_token_spans = Vec::new();
@@ -3571,6 +3592,18 @@ impl SplitRenderer {
                                         // Extract background from style if present
                                         // Set fg to same as bg for invisible text
                                         style.bg.map(|bg| Style::default().fg(bg).bg(bg))
+                                    }
+                                    crate::view::overlay::OverlayFace::ThemedStyle {
+                                        fallback_style,
+                                        bg_theme,
+                                        ..
+                                    } => {
+                                        // Try theme key first, fall back to style's bg
+                                        let bg = bg_theme
+                                            .as_ref()
+                                            .and_then(|key| theme.resolve_theme_key(key))
+                                            .or(fallback_style.bg);
+                                        bg.map(|bg| Style::default().fg(bg).bg(bg))
                                     }
                                     _ => None,
                                 }

@@ -238,6 +238,22 @@ pub fn get_all_commands() -> Vec<Command> {
             source: CommandSource::Builtin,
         },
         Command {
+            name: t!("cmd.trim_trailing_whitespace").to_string(),
+            description: t!("cmd.trim_trailing_whitespace_desc").to_string(),
+            action: Action::TrimTrailingWhitespace,
+            contexts: vec![KeyContext::Normal],
+            custom_contexts: vec![],
+            source: CommandSource::Builtin,
+        },
+        Command {
+            name: t!("cmd.ensure_final_newline").to_string(),
+            description: t!("cmd.ensure_final_newline_desc").to_string(),
+            action: Action::EnsureFinalNewline,
+            contexts: vec![KeyContext::Normal],
+            custom_contexts: vec![],
+            source: CommandSource::Builtin,
+        },
+        Command {
             name: t!("cmd.quit").to_string(),
             description: t!("cmd.quit_desc").to_string(),
             action: Action::Quit,
@@ -779,7 +795,7 @@ pub fn get_all_commands() -> Vec<Command> {
             custom_contexts: vec![],
             source: CommandSource::Builtin,
         },
-        // Note: Command Palette is intentionally not in the command list
+        // Note: Quick open / Command Palette is intentionally not in the command list
         // to avoid confusion when it's already open (use Ctrl+P or Ctrl+/ to toggle)
         // Search and replace
         Command {

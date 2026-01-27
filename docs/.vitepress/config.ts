@@ -138,6 +138,8 @@ export default defineConfig({
                   { text: "Paste Handling", link: "/internal/paste-handling" },
                   { text: "Vi Mode Design", link: "/internal/vi-mode-design" },
                   { text: "Warning UX", link: "/internal/warning-notification-ux" },
+                  { text: "Input Layout Rendering", link: "/internal/input-layout-rendering-summary" },
+                  { text: "Unified UI Framework", link: "/internal/unified-ui-framework-plan" },
                 ],
               },
               {
@@ -167,7 +169,8 @@ export default defineConfig({
                   { text: "TimeSource Design", link: "/internal/timesource-design" },
                   { text: "Unicode Width", link: "/internal/unicode-width" },
                   { text: "Readme", link: "/internal/README" },
-
+                  { text: "Fuzzy File Finder UX", link: "/internal/fuzzy-file-finder-ux" },
+                  { text: "Issues Implementation", link: "/internal/issues-implementation-plan" },
                 ],
               },
             ],

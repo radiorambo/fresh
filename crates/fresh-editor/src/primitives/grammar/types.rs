@@ -390,6 +390,90 @@ impl GrammarRegistry {
     pub fn filename_scopes(&self) -> &HashMap<String, String> {
         &self.filename_scopes
     }
+
+    /// Create a new registry with additional grammar files
+    ///
+    /// This builds a new GrammarRegistry that includes all grammars from
+    /// the base registry plus the additional grammars specified.
+    ///
+    /// # Arguments
+    /// * `base` - The base registry to extend
+    /// * `additional` - List of (language, path, extensions) tuples for new grammars
+    ///
+    /// # Returns
+    /// A new GrammarRegistry with the additional grammars, or None if rebuilding fails
+    pub fn with_additional_grammars(
+        base: &GrammarRegistry,
+        additional: &[(String, PathBuf, Vec<String>)],
+    ) -> Option<Self> {
+        // Start with defaults and embedded grammars (same as Default impl)
+        let defaults = SyntaxSet::load_defaults_newlines();
+        let mut builder = defaults.into_builder();
+        Self::add_embedded_grammars(&mut builder);
+
+        // Clone the base user extensions
+        let mut user_extensions = base.user_extensions.clone();
+
+        // Add each new grammar
+        for (language, path, extensions) in additional {
+            match Self::load_grammar_file(path) {
+                Ok(syntax) => {
+                    let scope = syntax.scope.to_string();
+                    builder.add(syntax);
+                    tracing::info!(
+                        "Loaded grammar for '{}' from {:?} with extensions {:?}",
+                        language,
+                        path,
+                        extensions
+                    );
+                    // Register extensions for this grammar
+                    for ext in extensions {
+                        user_extensions.insert(ext.clone(), scope.clone());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load grammar for '{}' from {:?}: {}",
+                        language,
+                        path,
+                        e
+                    );
+                }
+            }
+        }
+
+        Some(Self::new(
+            builder.build(),
+            user_extensions,
+            base.filename_scopes.clone(),
+        ))
+    }
+
+    /// Load a grammar file from disk
+    ///
+    /// Only Sublime Text (.sublime-syntax) format is supported.
+    /// TextMate (.tmLanguage) grammars use a completely different format
+    /// and cannot be loaded by syntect's yaml-load feature.
+    fn load_grammar_file(path: &Path) -> Result<SyntaxDefinition, String> {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+        match ext {
+            "sublime-syntax" => {
+                let content = std::fs::read_to_string(path)
+                    .map_err(|e| format!("Failed to read file: {}", e))?;
+                SyntaxDefinition::load_from_str(
+                    &content,
+                    true,
+                    path.file_stem().and_then(|s| s.to_str()),
+                )
+                .map_err(|e| format!("Failed to parse sublime-syntax: {}", e))
+            }
+            _ => Err(format!(
+                "Unsupported grammar format: .{}. Only .sublime-syntax is supported.",
+                ext
+            )),
+        }
+    }
 }
 
 impl Default for GrammarRegistry {

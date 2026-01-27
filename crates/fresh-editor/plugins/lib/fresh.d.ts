@@ -349,6 +349,16 @@ type FileExplorerDecoration = {
 	*/
 	priority: number;
 };
+type FormatterPackConfig = {
+	/**
+	* Command to run (e.g., "prettier", "rustfmt")
+	*/
+	command: string;
+	/**
+	* Arguments to pass to the formatter
+	*/
+	args: Array<string>;
+};
 type BackgroundProcessResult = {
 	/**
 	* Unique process ID for later reference
@@ -522,6 +532,54 @@ type CreateVirtualBufferOptions = {
 	* Initial content entries with optional properties
 	*/
 	entries?: Array<TextPropertyEntry>;
+};
+type LanguagePackConfig = {
+	/**
+	* Comment prefix for line comments (e.g., "//" or "#")
+	*/
+	commentPrefix: string | null;
+	/**
+	* Block comment start marker (e.g., slash-star)
+	*/
+	blockCommentStart: string | null;
+	/**
+	* Block comment end marker (e.g., star-slash)
+	*/
+	blockCommentEnd: string | null;
+	/**
+	* Whether to use tabs instead of spaces for indentation
+	*/
+	useTabs: boolean | null;
+	/**
+	* Tab size (number of spaces per tab level)
+	*/
+	tabSize: number | null;
+	/**
+	* Whether auto-indent is enabled
+	*/
+	autoIndent: boolean | null;
+	/**
+	* Formatter configuration
+	*/
+	formatter: FormatterPackConfig | null;
+};
+type LspServerPackConfig = {
+	/**
+	* Command to start the LSP server
+	*/
+	command: string;
+	/**
+	* Arguments to pass to the command
+	*/
+	args: Array<string>;
+	/**
+	* Whether to auto-start the server when a matching file is opened
+	*/
+	autoStart: boolean | null;
+	/**
+	* LSP initialization options
+	*/
+	initializationOptions: Record<string, unknown> | null;
 };
 type SpawnResult = {
 	/**
@@ -774,6 +832,29 @@ interface EditorAPI {
 	*/
 	reloadConfig(): void;
 	/**
+	* Reload theme registry from disk
+	* Call this after installing theme packages or saving new themes
+	*/
+	reloadThemes(): void;
+	/**
+	* Register a TextMate grammar file for a language
+	* The grammar will be pending until reload_grammars() is called
+	*/
+	registerGrammar(language: string, grammarPath: string, extensions: string[]): boolean;
+	/**
+	* Register language configuration (comment prefix, indentation, formatter)
+	*/
+	registerLanguageConfig(language: string, config: LanguagePackConfig): boolean;
+	/**
+	* Register an LSP server for a language
+	*/
+	registerLspServer(language: string, config: LspServerPackConfig): boolean;
+	/**
+	* Reload the grammar registry to apply registered grammars
+	* Call this after registering one or more grammars
+	*/
+	reloadGrammars(): void;
+	/**
 	* Get config directory path
 	*/
 	getConfigDir(): string;
@@ -835,9 +916,23 @@ interface EditorAPI {
 	*/
 	getHighlights(bufferId: number, start: number, end: number): Promise<TsHighlightSpan[]>;
 	/**
-	* Add an overlay with styling
+	* Add an overlay with styling options
+	* 
+	* Colors can be specified as RGB arrays `[r, g, b]` or theme key strings.
+	* Theme keys are resolved at render time, so overlays update with theme changes.
+	* 
+	* Theme key examples: "ui.status_bar_fg", "editor.selection_bg", "syntax.keyword"
+	* 
+	* Example usage in TypeScript:
+	* ```typescript
+	* editor.addOverlay(bufferId, "my-namespace", 0, 10, {
+	* fg: "syntax.keyword",           // theme key
+	* bg: [40, 40, 50],               // RGB array
+	* bold: true,
+	* });
+	* ```
 	*/
-	addOverlay(bufferId: number, namespace: string, start: number, end: number, r: number, g: number, b: number, underline?: boolean, bold?: boolean, italic?: boolean, bgR?: number, bgG?: number, bgB?: number, extendToLineEnd?: boolean): boolean;
+	addOverlay(bufferId: number, namespace: string, start: number, end: number, options: Record<string, unknown>): boolean;
 	/**
 	* Clear all overlays in a namespace
 	*/
@@ -1067,4 +1162,25 @@ interface EditorAPI {
 	* Get the current locale
 	*/
 	getCurrentLocale(): string;
+	/**
+	* Load a plugin from a file path (async)
+	*/
+	loadPlugin(path: string): Promise<boolean>;
+	/**
+	* Unload a plugin by name (async)
+	*/
+	unloadPlugin(name: string): Promise<boolean>;
+	/**
+	* Reload a plugin by name (async)
+	*/
+	reloadPlugin(name: string): Promise<boolean>;
+	/**
+	* List all loaded plugins (async)
+	* Returns array of { name: string, path: string, enabled: boolean }
+	*/
+	listPlugins(): Promise<Array<{
+		name: string;
+		path: string;
+		enabled: boolean;
+	}>>;
 }

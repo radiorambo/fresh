@@ -741,12 +741,11 @@ function addColorOverlay(
   color: RGB,
   bold: boolean = false
 ): void {
-  editor.addOverlay(bufferId, "theme", start, end, color[0], color[1], color[2], false, bold, false, -1, -1, -1, false);
+  editor.addOverlay(bufferId, "theme", start, end, { fg: color, bold });
 }
 
 /**
  * Helper to add a background highlight overlay
- * addOverlay signature: (bufferId, namespace, start, end, r, g, b, underline, bold, italic, bg_r, bg_g, bg_b, extend_to_line_end)
  */
 function addBackgroundHighlight(
   bufferId: number,
@@ -754,7 +753,7 @@ function addBackgroundHighlight(
   end: number,
   bgColor: RGB
 ): void {
-  editor.addOverlay(bufferId, "theme-selection", start, end, -1, -1, -1, false, false, false, bgColor[0], bgColor[1], bgColor[2], true);
+  editor.addOverlay(bufferId, "theme-selection", start, end, { bg: bgColor, extendToLineEnd: true });
 }
 
 /**
@@ -831,7 +830,7 @@ function applyHighlighting(): void {
           const swatchBgStart = swatchFgEnd;
           const swatchBgEnd = swatchBgStart + 1;
           // Use background color for the space
-          editor.addOverlay(bufferId, "theme", swatchBgStart, swatchBgEnd, -1, -1, -1, false, false, false, rgb[0], rgb[1], rgb[2], false);
+          editor.addOverlay(bufferId, "theme", swatchBgStart, swatchBgEnd, { bg: rgb });
         }
 
         // Value (hex code) - custom color (green)
@@ -1334,7 +1333,8 @@ async function saveTheme(name?: string, restorePath?: string | null): Promise<bo
       moveCursorToField(restorePath);
     }
 
-    // Automatically apply the saved theme
+    // Reload themes so the new/updated theme is available, then apply it
+    editor.reloadThemes();
     editor.applyTheme(themeName);
     editor.setStatus(editor.t("status.saved_and_applied", { name: themeName }));
     return true;

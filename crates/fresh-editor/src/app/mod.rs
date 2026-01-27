@@ -29,6 +29,7 @@ mod split_actions;
 mod tab_drag;
 mod terminal;
 mod terminal_input;
+mod terminal_mouse;
 mod toggle_actions;
 pub mod types;
 mod undo_actions;
@@ -84,6 +85,9 @@ use crate::input::command_registry::CommandRegistry;
 use crate::input::commands::Suggestion;
 use crate::input::keybindings::{Action, KeyContext, KeybindingResolver};
 use crate::input::position_history::PositionHistory;
+use crate::input::quick_open::{
+    FileProvider, GotoLineProvider, QuickOpenContext, QuickOpenProvider, QuickOpenRegistry,
+};
 use crate::model::event::{Event, EventLog, SplitDirection, SplitId};
 use crate::model::filesystem::FileSystem;
 use crate::services::async_bridge::{AsyncBridge, AsyncMessage};
@@ -104,6 +108,8 @@ use crate::view::ui::{
 use crossterm::event::{KeyCode, KeyModifiers};
 #[cfg(feature = "plugins")]
 use fresh_core::api::BufferSavedDiff;
+#[cfg(feature = "plugins")]
+use fresh_core::api::JsCallbackId;
 use fresh_core::api::PluginCommand;
 use lsp_types::{Position, Range as LspRange, TextDocumentContentChangeEvent};
 use ratatui::{
@@ -131,6 +137,17 @@ fn uri_to_path(uri: &lsp_types::Uri) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to parse URI: {}", e))?
         .to_file_path()
         .map_err(|_| "URI is not a file path".to_string())
+}
+
+/// A pending grammar registration waiting for reload_grammars() to apply
+#[derive(Clone, Debug)]
+pub struct PendingGrammar {
+    /// Language identifier (e.g., "elixir")
+    pub language: String,
+    /// Path to the grammar file (.tmLanguage.json or .sublime-syntax)
+    pub grammar_path: String,
+    /// File extensions to associate with this grammar
+    pub extensions: Vec<String>,
 }
 
 /// Track an in-flight semantic token range request.
@@ -178,6 +195,9 @@ pub struct Editor {
 
     /// Grammar registry for TextMate syntax highlighting
     grammar_registry: std::sync::Arc<crate::primitives::grammar::GrammarRegistry>,
+
+    /// Pending grammars registered by plugins, waiting for reload_grammars() to apply
+    pending_grammars: Vec<PendingGrammar>,
 
     /// Active theme
     theme: crate::view::theme::Theme,
@@ -424,6 +444,14 @@ pub struct Editor {
     /// Command registry for dynamic commands
     command_registry: Arc<RwLock<CommandRegistry>>,
 
+    /// Quick Open registry for unified prompt providers
+    /// Note: Currently unused as provider logic is inlined, but kept for future plugin support
+    #[allow(dead_code)]
+    quick_open_registry: QuickOpenRegistry,
+
+    /// File provider for Quick Open (stored separately for cache management)
+    file_provider: Arc<FileProvider>,
+
     /// Plugin manager (handles both enabled and disabled cases)
     plugin_manager: PluginManager,
 
@@ -567,6 +595,9 @@ pub struct Editor {
 
     /// Warning log receiver and path (for tracking warnings)
     warning_log: Option<(std::sync::mpsc::Receiver<()>, PathBuf)>,
+
+    /// Status message log path (for viewing full status history)
+    status_log_path: Option<PathBuf>,
 
     /// Warning domain registry for extensible warning indicators
     /// Contains LSP warnings, general warnings, and can be extended by plugins
@@ -762,10 +793,18 @@ impl Editor {
         let theme_loader = crate::view::theme::ThemeLoader::new();
         let theme_registry = theme_loader.load_all();
 
-        // Get active theme from registry
-        let theme = theme_registry
-            .get_cloned(&config.theme)
-            .ok_or_else(|| anyhow::anyhow!("Theme '{}' not found", config.theme.0))?;
+        // Get active theme from registry, falling back to default if not found
+        let theme = theme_registry.get_cloned(&config.theme).unwrap_or_else(|| {
+            tracing::warn!(
+                "Theme '{}' not found, falling back to default theme",
+                config.theme.0
+            );
+            theme_registry
+                .get_cloned(&crate::config::ThemeName(
+                    crate::view::theme::THEME_HIGH_CONTRAST.to_string(),
+                ))
+                .expect("Default theme must exist")
+        });
 
         // Set terminal cursor color to match theme
         theme.set_terminal_cursor_color();
@@ -848,6 +887,15 @@ impl Editor {
         // Initialize command registry (always available, used by both plugins and core)
         let command_registry = Arc::new(RwLock::new(CommandRegistry::new()));
 
+        // Initialize file provider for Quick Open (stored separately for cache management)
+        let file_provider = Arc::new(FileProvider::new());
+
+        // Initialize Quick Open registry with providers
+        let mut quick_open_registry = QuickOpenRegistry::new();
+        quick_open_registry.register(Box::new(GotoLineProvider::new()));
+        // File provider is the default (empty prefix) - use the shared Arc instance
+        // We'll handle commands and buffers inline since they need App state
+
         // Initialize plugin manager (handles both enabled and disabled cases internally)
         let plugin_manager = PluginManager::new(
             enable_plugins,
@@ -867,6 +915,8 @@ impl Editor {
         // 1. Next to the executable (for cargo-dist installations)
         // 2. In the working directory (for development/local usage)
         // 3. From embedded plugins (for cargo-binstall, when embed-plugins feature is enabled)
+        // 4. User plugins directory (~/.config/fresh/plugins)
+        // 5. Package manager installed plugins (~/.config/fresh/plugins/packages/*)
         if plugin_manager.is_active() {
             let mut plugin_dirs: Vec<std::path::PathBuf> = vec![];
 
@@ -894,6 +944,32 @@ impl Editor {
                 {
                     tracing::info!("Using embedded plugins from: {:?}", embedded_dir);
                     plugin_dirs.push(embedded_dir.clone());
+                }
+            }
+
+            // Always check user config plugins directory (~/.config/fresh/plugins)
+            let user_plugins_dir = dir_context.config_dir.join("plugins");
+            if user_plugins_dir.exists() && !plugin_dirs.contains(&user_plugins_dir) {
+                tracing::info!("Found user plugins directory: {:?}", user_plugins_dir);
+                plugin_dirs.push(user_plugins_dir.clone());
+            }
+
+            // Check for package manager installed plugins (~/.config/fresh/plugins/packages/*)
+            let packages_dir = dir_context.config_dir.join("plugins").join("packages");
+            if packages_dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&packages_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        // Skip hidden directories (like .index for registry cache)
+                        if path.is_dir() {
+                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                if !name.starts_with('.') {
+                                    tracing::info!("Found package manager plugin: {:?}", path);
+                                    plugin_dirs.push(path);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -961,6 +1037,7 @@ impl Editor {
             config,
             dir_context: dir_context.clone(),
             grammar_registry,
+            pending_grammars: Vec::new(),
             theme,
             theme_registry,
             ansi_background: None,
@@ -1043,6 +1120,8 @@ impl Editor {
             tab_context_menu: None,
             cached_layout: CachedLayout::default(),
             command_registry,
+            quick_open_registry,
+            file_provider,
             plugin_manager,
             seen_byte_ranges: HashMap::new(),
             panel_ids: HashMap::new(),
@@ -1107,6 +1186,7 @@ impl Editor {
             active_custom_contexts: HashSet::new(),
             editor_mode: None,
             warning_log: None,
+            status_log_path: None,
             warning_domains: WarningDomainRegistry::new(),
             update_checker,
             terminal_manager: crate::services::terminal::TerminalManager::new(),
@@ -1415,6 +1495,27 @@ impl Editor {
         self.warning_log = Some((receiver, path));
     }
 
+    /// Set the status message log path
+    pub fn set_status_log_path(&mut self, path: PathBuf) {
+        self.status_log_path = Some(path);
+    }
+
+    /// Get the status log path
+    pub fn get_status_log_path(&self) -> Option<&PathBuf> {
+        self.status_log_path.as_ref()
+    }
+
+    /// Open the status log file (user clicked on status message)
+    pub fn open_status_log(&mut self) {
+        if let Some(path) = self.status_log_path.clone() {
+            if let Err(e) = self.open_file(&path) {
+                tracing::error!("Failed to open status log: {}", e);
+            }
+        } else {
+            self.set_status_message("Status log not available".to_string());
+        }
+    }
+
     /// Check for and handle any new warnings in the warning log
     ///
     /// Updates the general warning domain for the status bar.
@@ -1690,12 +1791,11 @@ impl Editor {
         let active_split = self.split_manager.active_split();
         if let Some(view_state) = self.split_view_states.get_mut(&active_split) {
             view_state.add_buffer(buffer_id);
-            // Update the previous buffer tracker
-            view_state.previous_buffer = Some(previous);
+            // Update the focus history (push the previous buffer we're leaving)
+            view_state.push_focus(previous);
         }
 
         // Ensure the newly active tab is visible
-        // Use effective_tabs_width() to account for file explorer taking 30% of width
         self.ensure_active_tab_visible(active_split, buffer_id, self.effective_tabs_width());
 
         // Note: We don't sync file explorer here to avoid flicker during tab switches.
@@ -1755,7 +1855,7 @@ impl Editor {
                 self.position_history.commit_pending_movement();
                 if let Some(view_state) = self.split_view_states.get_mut(&split_id) {
                     view_state.add_buffer(buffer_id);
-                    view_state.previous_buffer = Some(previous_buffer);
+                    view_state.push_focus(previous_buffer);
                 }
                 // Note: We don't sync file explorer here to avoid flicker during split focus changes.
                 // File explorer syncs when explicitly focused via focus_file_explorer().
@@ -2708,6 +2808,179 @@ impl Editor {
         ));
     }
 
+    /// Start Quick Open prompt with command palette as default
+    pub fn start_quick_open(&mut self) {
+        // Dismiss transient popups and clear hover state
+        self.on_editor_focus_lost();
+
+        // Clear status message since hints are now shown in the popup
+        self.status_message = None;
+
+        // Start with ">" prefix for command mode by default
+        let mut prompt = Prompt::with_suggestions(String::new(), PromptType::QuickOpen, vec![]);
+        prompt.input = ">".to_string();
+        prompt.cursor_pos = 1;
+        self.prompt = Some(prompt);
+
+        // Load initial command suggestions
+        self.update_quick_open_suggestions(">");
+    }
+
+    /// Update Quick Open suggestions based on current input
+    fn update_quick_open_suggestions(&mut self, input: &str) {
+        let suggestions = if input.starts_with('>') {
+            // Command mode
+            let query = &input[1..];
+            let active_buffer_mode = self
+                .buffer_metadata
+                .get(&self.active_buffer())
+                .and_then(|m| m.virtual_mode());
+            self.command_registry.read().unwrap().filter(
+                query,
+                self.key_context,
+                &self.keybindings,
+                self.has_active_selection(),
+                &self.active_custom_contexts,
+                active_buffer_mode,
+            )
+        } else if input.starts_with('#') {
+            // Buffer mode
+            let query = &input[1..];
+            self.get_buffer_suggestions(query)
+        } else if input.starts_with(':') {
+            // Go to line mode
+            let line_str = &input[1..];
+            self.get_goto_line_suggestions(line_str)
+        } else {
+            // File mode (default)
+            self.get_file_suggestions(input)
+        };
+
+        if let Some(prompt) = &mut self.prompt {
+            prompt.suggestions = suggestions;
+            prompt.selected_suggestion = if prompt.suggestions.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
+        }
+    }
+
+    /// Get buffer suggestions for Quick Open
+    fn get_buffer_suggestions(&self, query: &str) -> Vec<Suggestion> {
+        use crate::input::fuzzy::fuzzy_match;
+
+        let mut suggestions: Vec<(Suggestion, i32)> = self
+            .buffers
+            .iter()
+            .filter_map(|(buffer_id, state)| {
+                let path = state.buffer.file_path()?;
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| format!("Buffer {}", buffer_id.0));
+
+                let match_result = if query.is_empty() {
+                    crate::input::fuzzy::FuzzyMatch {
+                        matched: true,
+                        score: 0,
+                        match_positions: vec![],
+                    }
+                } else {
+                    fuzzy_match(query, &name)
+                };
+
+                if match_result.matched {
+                    let modified = state.buffer.is_modified();
+                    let display_name = if modified {
+                        format!("{} [+]", name)
+                    } else {
+                        name
+                    };
+
+                    Some((
+                        Suggestion {
+                            text: display_name,
+                            description: Some(path.display().to_string()),
+                            value: Some(buffer_id.0.to_string()),
+                            disabled: false,
+                            keybinding: None,
+                            source: None,
+                        },
+                        match_result.score,
+                    ))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        suggestions.sort_by(|a, b| b.1.cmp(&a.1));
+        suggestions.into_iter().map(|(s, _)| s).collect()
+    }
+
+    /// Get go-to-line suggestions for Quick Open
+    fn get_goto_line_suggestions(&self, line_str: &str) -> Vec<Suggestion> {
+        if line_str.is_empty() {
+            return vec![Suggestion {
+                text: t!("quick_open.goto_line_hint").to_string(),
+                description: Some(t!("quick_open.goto_line_desc").to_string()),
+                value: None,
+                disabled: true,
+                keybinding: None,
+                source: None,
+            }];
+        }
+
+        if let Ok(line_num) = line_str.parse::<usize>() {
+            if line_num > 0 {
+                return vec![Suggestion {
+                    text: t!("quick_open.goto_line", line = line_num.to_string()).to_string(),
+                    description: Some(t!("quick_open.press_enter").to_string()),
+                    value: Some(line_num.to_string()),
+                    disabled: false,
+                    keybinding: None,
+                    source: None,
+                }];
+            }
+        }
+
+        vec![Suggestion {
+            text: t!("quick_open.invalid_line").to_string(),
+            description: Some(line_str.to_string()),
+            value: None,
+            disabled: true,
+            keybinding: None,
+            source: None,
+        }]
+    }
+
+    /// Get file suggestions for Quick Open
+    fn get_file_suggestions(&self, query: &str) -> Vec<Suggestion> {
+        // Use the file provider's file loading mechanism
+        let cwd = self.working_dir.display().to_string();
+        let context = QuickOpenContext {
+            cwd: cwd.clone(),
+            open_buffers: vec![], // Not needed for file suggestions
+            active_buffer_id: self.active_buffer().0,
+            active_buffer_path: self
+                .active_state()
+                .buffer
+                .file_path()
+                .map(|p| p.display().to_string()),
+            has_selection: self.has_active_selection(),
+            key_context: self.key_context,
+            custom_contexts: self.active_custom_contexts.clone(),
+            buffer_mode: self
+                .buffer_metadata
+                .get(&self.active_buffer())
+                .and_then(|m| m.virtual_mode())
+                .map(|s| s.to_string()),
+        };
+
+        self.file_provider.suggestions(query, &context)
+    }
+
     /// Cancel search/replace prompts if one is active.
     /// Called when focus leaves the editor (e.g., switching buffers, focusing file explorer).
     fn cancel_search_prompt_if_active(&mut self) {
@@ -3147,6 +3420,7 @@ impl Editor {
 
     /// Set a status message to display in the status bar
     pub fn set_status_message(&mut self, message: String) {
+        tracing::info!(target: "status", "{}", message);
         self.plugin_status_message = None;
         self.status_message = Some(message);
     }
@@ -3201,6 +3475,10 @@ impl Editor {
                         Some(0)
                     };
                 }
+            }
+            PromptType::QuickOpen => {
+                // Update Quick Open suggestions based on prefix
+                self.update_quick_open_suggestions(&input);
             }
             PromptType::Search | PromptType::ReplaceSearch | PromptType::QueryReplaceSearch => {
                 // Update incremental search highlights as user types
@@ -3941,24 +4219,9 @@ impl Editor {
                 buffer_id,
                 namespace,
                 range,
-                color,
-                bg_color,
-                underline,
-                bold,
-                italic,
-                extend_to_line_end,
+                options,
             } => {
-                self.handle_add_overlay(
-                    buffer_id,
-                    namespace,
-                    range,
-                    color,
-                    bg_color,
-                    underline,
-                    bold,
-                    italic,
-                    extend_to_line_end,
-                );
+                self.handle_add_overlay(buffer_id, namespace, range, options);
             }
             PluginCommand::RemoveOverlay { buffer_id, handle } => {
                 self.handle_remove_overlay(buffer_id, handle);
@@ -4153,6 +4416,25 @@ impl Editor {
             }
             PluginCommand::ReloadConfig => {
                 self.reload_config();
+            }
+            PluginCommand::ReloadThemes => {
+                self.reload_themes();
+            }
+            PluginCommand::RegisterGrammar {
+                language,
+                grammar_path,
+                extensions,
+            } => {
+                self.handle_register_grammar(language, grammar_path, extensions);
+            }
+            PluginCommand::RegisterLanguageConfig { language, config } => {
+                self.handle_register_language_config(language, config);
+            }
+            PluginCommand::RegisterLspServer { language, config } => {
+                self.handle_register_lsp_server(language, config);
+            }
+            PluginCommand::ReloadGrammars => {
+                self.handle_reload_grammars();
             }
             PluginCommand::StartPrompt { label, prompt_type } => {
                 self.handle_start_prompt(label, prompt_type);
@@ -5022,6 +5304,32 @@ impl Editor {
             PluginCommand::SaveBufferToPath { buffer_id, path } => {
                 self.handle_save_buffer_to_path(buffer_id, path);
             }
+
+            // ==================== Plugin Management ====================
+            #[cfg(feature = "plugins")]
+            PluginCommand::LoadPlugin { path, callback_id } => {
+                self.handle_load_plugin(path, callback_id);
+            }
+            #[cfg(feature = "plugins")]
+            PluginCommand::UnloadPlugin { name, callback_id } => {
+                self.handle_unload_plugin(name, callback_id);
+            }
+            #[cfg(feature = "plugins")]
+            PluginCommand::ReloadPlugin { name, callback_id } => {
+                self.handle_reload_plugin(name, callback_id);
+            }
+            #[cfg(feature = "plugins")]
+            PluginCommand::ListPlugins { callback_id } => {
+                self.handle_list_plugins(callback_id);
+            }
+            // When plugins feature is disabled, these commands are no-ops
+            #[cfg(not(feature = "plugins"))]
+            PluginCommand::LoadPlugin { .. }
+            | PluginCommand::UnloadPlugin { .. }
+            | PluginCommand::ReloadPlugin { .. }
+            | PluginCommand::ListPlugins { .. } => {
+                tracing::warn!("Plugin management commands require the 'plugins' feature");
+            }
         }
         Ok(())
     }
@@ -5047,6 +5355,76 @@ impl Editor {
             self.handle_set_status(format!("Buffer {:?} not found", buffer_id));
             tracing::warn!("SaveBufferToPath: buffer {:?} not found", buffer_id);
         }
+    }
+
+    /// Load a plugin from a file path
+    #[cfg(feature = "plugins")]
+    fn handle_load_plugin(&mut self, path: std::path::PathBuf, callback_id: JsCallbackId) {
+        match self.plugin_manager.load_plugin(&path) {
+            Ok(()) => {
+                tracing::info!("Loaded plugin from {:?}", path);
+                self.plugin_manager
+                    .resolve_callback(callback_id, "true".to_string());
+            }
+            Err(e) => {
+                tracing::error!("Failed to load plugin from {:?}: {}", path, e);
+                self.plugin_manager
+                    .reject_callback(callback_id, format!("{}", e));
+            }
+        }
+    }
+
+    /// Unload a plugin by name
+    #[cfg(feature = "plugins")]
+    fn handle_unload_plugin(&mut self, name: String, callback_id: JsCallbackId) {
+        match self.plugin_manager.unload_plugin(&name) {
+            Ok(()) => {
+                tracing::info!("Unloaded plugin: {}", name);
+                self.plugin_manager
+                    .resolve_callback(callback_id, "true".to_string());
+            }
+            Err(e) => {
+                tracing::error!("Failed to unload plugin '{}': {}", name, e);
+                self.plugin_manager
+                    .reject_callback(callback_id, format!("{}", e));
+            }
+        }
+    }
+
+    /// Reload a plugin by name
+    #[cfg(feature = "plugins")]
+    fn handle_reload_plugin(&mut self, name: String, callback_id: JsCallbackId) {
+        match self.plugin_manager.reload_plugin(&name) {
+            Ok(()) => {
+                tracing::info!("Reloaded plugin: {}", name);
+                self.plugin_manager
+                    .resolve_callback(callback_id, "true".to_string());
+            }
+            Err(e) => {
+                tracing::error!("Failed to reload plugin '{}': {}", name, e);
+                self.plugin_manager
+                    .reject_callback(callback_id, format!("{}", e));
+            }
+        }
+    }
+
+    /// List all loaded plugins
+    #[cfg(feature = "plugins")]
+    fn handle_list_plugins(&mut self, callback_id: JsCallbackId) {
+        let plugins = self.plugin_manager.list_plugins();
+        // Serialize to JSON array of { name, path, enabled }
+        let json_array: Vec<serde_json::Value> = plugins
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "path": p.path.to_string_lossy(),
+                    "enabled": p.enabled
+                })
+            })
+            .collect();
+        let json_str = serde_json::to_string(&json_array).unwrap_or_else(|_| "[]".to_string());
+        self.plugin_manager.resolve_callback(callback_id, json_str);
     }
 
     /// Execute an editor action by name (for vi mode plugin)

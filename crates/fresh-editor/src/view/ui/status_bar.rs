@@ -24,6 +24,8 @@ pub struct StatusBarLayout {
     pub line_ending_indicator: Option<(u16, u16, u16)>,
     /// Language indicator area (row, start_col, end_col)
     pub language_indicator: Option<(u16, u16, u16)>,
+    /// Status message area (row, start_col, end_col) - clickable to show full history
+    pub message_area: Option<(u16, u16, u16)>,
 }
 
 /// Status bar hover state for styling clickable indicators
@@ -39,6 +41,8 @@ pub enum StatusBarHover {
     LineEndingIndicator,
     /// Mouse is over the language indicator
     LanguageIndicator,
+    /// Mouse is over the status message area
+    MessageArea,
 }
 
 /// Which search option checkbox is being hovered
@@ -580,11 +584,21 @@ impl StatusBarRenderer {
 
         // Build left status (file info, position, diagnostics, messages)
         // Line and column are 0-indexed internally, but displayed as 1-indexed (standard editor convention)
-        let base_status = format!(
-            "{filename}{modified} | Ln {}, Col {}{diagnostics_summary}{cursor_count_indicator}",
-            line + 1,
-            col + 1
-        );
+        // For virtual buffers with hidden cursors, don't show line/column info
+        let base_status = if state.show_cursors {
+            format!(
+                "{filename}{modified} | Ln {}, Col {}{diagnostics_summary}{cursor_count_indicator}",
+                line + 1,
+                col + 1
+            )
+        } else {
+            // Virtual buffer - just show filename and modified indicator
+            format!("{filename}{modified}{diagnostics_summary}")
+        };
+
+        // Track where the message starts for click detection
+        let base_and_chord_width = str_width(&base_status) + str_width(&chord_display);
+        let message_width = str_width(&message_suffix);
 
         let left_status = format!("{base_status}{chord_display}{message_suffix}");
 
@@ -620,11 +634,11 @@ impl StatusBarRenderer {
             .map(|version| format!(" {} ", t!("status.update_available", version = version)));
         let update_width = update_indicator.as_ref().map(|s| s.len()).unwrap_or(0);
 
-        // Build Command Palette indicator for right side
-        // Always show Command Palette indicator on the right side
+        // Build Quick Open / Command Palette indicator for right side
+        // Always show the indicator on the right side
         let cmd_palette_shortcut = keybindings
             .get_keybinding_for_action(
-                &crate::input::keybindings::Action::CommandPalette,
+                &crate::input::keybindings::Action::QuickOpen,
                 crate::input::keybindings::KeyContext::Global,
             )
             .unwrap_or_else(|| "?".to_string());
@@ -681,6 +695,17 @@ impl StatusBarRenderer {
             };
 
             let displayed_left_len = str_width(&displayed_left);
+
+            // Track message area for click detection (if there's a message)
+            if message_width > 0 {
+                // The message starts after base_and_chord, but might be truncated
+                let msg_start = base_and_chord_width.min(displayed_left_len);
+                let msg_end = displayed_left_len;
+                if msg_end > msg_start {
+                    layout.message_area =
+                        Some((area.y, area.x + msg_start as u16, area.x + msg_end as u16));
+                }
+            }
 
             spans.push(Span::styled(
                 displayed_left.clone(),

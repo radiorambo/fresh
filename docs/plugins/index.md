@@ -10,26 +10,35 @@ Fresh's functionality can be extended with plugins written in TypeScript. Fresh 
 
 ### Package Manager
 
-Fresh includes a built-in package manager for installing plugins and themes from git repositories.
+Fresh includes a built-in package manager for installing plugins, themes, and language packs from the [official registry](https://github.com/sinelaw/fresh-plugins-registry) or any git repository. See [fresh-plugins](https://github.com/sinelaw/fresh-plugins) for example packages you can use as templates.
 
-#### Installing Packages
+#### Opening the Package Manager
 
-Use the command palette (`Ctrl+P`) and search for:
+Use the command palette (`Ctrl+P >`) and search for "Package Manager" to open the package browser. You can filter by package type (Plugins, Themes, Languages) and search for packages by name.
+
+#### Package Types
+
+| Type | Description |
+|------|-------------|
+| **Plugins** | Extend Fresh with custom commands and functionality |
+| **Themes** | Custom color schemes and styling |
+| **Language packs** | Syntax highlighting, language settings, and LSP configuration for new languages |
+
+#### Commands
+
+Use the command palette (`Ctrl+P >`) and search for:
 
 | Command | Description |
 |---------|-------------|
-| `pkg: Install Plugin` | Browse and install plugins from the registry |
-| `pkg: Install Theme` | Browse and install themes from the registry |
+| `pkg: Open Package Manager` | Browse and install packages from the registry |
 | `pkg: Install from URL` | Install directly from any git repository URL |
-| `pkg: List Installed` | Show all installed packages |
 | `pkg: Update All` | Update all installed packages |
-| `pkg: Remove Package` | Remove an installed package |
 
 #### Installing from Git URL
 
 Any git repository can be installed directly:
 
-1. Open command palette (`Ctrl+P`)
+1. Open the command palette (`Ctrl+P >`)
 2. Search for `pkg: Install from URL`
 3. Enter the git repository URL (e.g., `https://github.com/user/fresh-plugin`)
 4. Restart Fresh to activate the plugin

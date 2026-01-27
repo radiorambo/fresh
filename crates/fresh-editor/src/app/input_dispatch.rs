@@ -134,8 +134,12 @@ impl Editor {
 
             if let Some(ref mut prompt) = self.prompt {
                 let result = prompt.dispatch_input(event, &mut ctx);
-                self.process_deferred_actions(ctx);
-                return Some(result);
+                // Only return and process deferred actions if the prompt handled the input
+                // If Ignored, fall through to check global keybindings
+                if result != InputResult::Ignored {
+                    self.process_deferred_actions(ctx);
+                    return Some(result);
+                }
             }
         }
 
@@ -387,6 +391,14 @@ impl Editor {
             }
             DeferredAction::SendTerminalKey(code, modifiers) => {
                 self.send_terminal_key(code, modifiers);
+            }
+            DeferredAction::SendTerminalMouse {
+                col,
+                row,
+                kind,
+                modifiers,
+            } => {
+                self.send_terminal_mouse(col, row, kind, modifiers);
             }
             DeferredAction::ExitTerminalMode { explicit } => {
                 self.terminal_mode = false;
