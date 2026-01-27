@@ -256,6 +256,7 @@ impl StatusBarRenderer {
     /// * `update_available` - Optional new version string if an update is available
     /// * `warning_level` - LSP warning level (for coloring LSP indicator)
     /// * `general_warning_count` - Number of general warnings (for badge display)
+    /// * `remote_connection` - Optional remote connection info (e.g., "user@host")
     ///
     /// # Returns
     /// Layout information with positions of clickable indicators
@@ -275,6 +276,7 @@ impl StatusBarRenderer {
         warning_level: WarningLevel,
         general_warning_count: usize,
         hover: StatusBarHover,
+        remote_connection: Option<&str>,
     ) -> StatusBarLayout {
         Self::render_status(
             frame,
@@ -291,6 +293,7 @@ impl StatusBarRenderer {
             warning_level,
             general_warning_count,
             hover,
+            remote_connection,
         )
     }
 
@@ -473,6 +476,7 @@ impl StatusBarRenderer {
         warning_level: WarningLevel,
         general_warning_count: usize,
         hover: StatusBarHover,
+        remote_connection: Option<&str>,
     ) -> StatusBarLayout {
         // Initialize layout tracking
         let mut layout = StatusBarLayout::default();
@@ -583,17 +587,21 @@ impl StatusBarRenderer {
         };
 
         // Build left status (file info, position, diagnostics, messages)
+        // Remote indicator comes first (if present), then filename
         // Line and column are 0-indexed internally, but displayed as 1-indexed (standard editor convention)
         // For virtual buffers with hidden cursors, don't show line/column info
+        let remote_prefix = remote_connection
+            .map(|conn| format!("[SSH:{}] ", conn))
+            .unwrap_or_default();
         let base_status = if state.show_cursors {
             format!(
-                "{filename}{modified} | Ln {}, Col {}{diagnostics_summary}{cursor_count_indicator}",
+                "{remote_prefix}{filename}{modified} | Ln {}, Col {}{diagnostics_summary}{cursor_count_indicator}",
                 line + 1,
                 col + 1
             )
         } else {
             // Virtual buffer - just show filename and modified indicator
-            format!("{filename}{modified}{diagnostics_summary}")
+            format!("{remote_prefix}{filename}{modified}{diagnostics_summary}")
         };
 
         // Track where the message starts for click detection
@@ -604,6 +612,7 @@ impl StatusBarRenderer {
 
         // Build right-side indicators (these stay fixed on the right)
         // Order: [Line ending] [Language] [LSP indicator] [warning badge] [update] [Palette]
+        // Note: Remote indicator is now on the left side, before the filename
 
         // Line ending indicator (clickable to change format)
         let line_ending_text = format!(" {} ", state.buffer.line_ending().display_name());

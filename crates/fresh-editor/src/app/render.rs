@@ -152,6 +152,9 @@ impl Editor {
             self.cached_layout.file_explorer_area = Some(horizontal_chunks[0]);
             editor_content_area = horizontal_chunks[1];
 
+            // Get remote connection info before mutable borrow of file_explorer
+            let remote_connection = self.remote_connection_info().map(|s| s.to_string());
+
             // Render file explorer (only if we have it - during sync we just keep the area reserved)
             if let Some(ref mut explorer) = self.file_explorer {
                 let is_focused = self.key_context == KeyContext::FileExplorer;
@@ -183,6 +186,7 @@ impl Editor {
                     self.key_context,
                     &self.theme,
                     close_button_hovered,
+                    remote_connection.as_deref(),
                 );
             }
             // Note: if file_explorer is None but sync_in_progress is true,
@@ -573,6 +577,9 @@ impl Editor {
                 _ => StatusBarHover::None,
             };
 
+            // Get remote connection info if editing remote files
+            let remote_connection = self.remote_connection_info().map(|s| s.to_string());
+
             let status_bar_layout = StatusBarRenderer::render_status_bar(
                 frame,
                 main_chunks[status_bar_idx],
@@ -582,12 +589,13 @@ impl Editor {
                 &lsp_status,
                 &theme,
                 &display_name,
-                &keybindings_cloned,         // Pass the cloned keybindings
-                &chord_state_cloned,         // Pass the cloned chord state
-                update_available.as_deref(), // Pass update availability
-                warning_level,               // Pass warning level for colored indicator
-                general_warning_count,       // Pass general warning count for badge
-                status_bar_hover,            // Pass hover state for indicator styling
+                &keybindings_cloned,          // Pass the cloned keybindings
+                &chord_state_cloned,          // Pass the cloned chord state
+                update_available.as_deref(),  // Pass update availability
+                warning_level,                // Pass warning level for colored indicator
+                general_warning_count,        // Pass general warning count for badge
+                status_bar_hover,             // Pass hover state for indicator styling
+                remote_connection.as_deref(), // Pass remote connection info
             );
 
             // Store status bar layout for click detection

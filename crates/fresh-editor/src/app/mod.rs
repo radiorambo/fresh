@@ -285,6 +285,13 @@ pub struct Editor {
     /// Filesystem implementation for IO operations
     filesystem: Arc<dyn FileSystem + Send + Sync>,
 
+    /// Local filesystem for local-only operations (log files, etc.)
+    /// This is always StdFileSystem, even when filesystem is RemoteFileSystem
+    local_filesystem: Arc<dyn FileSystem + Send + Sync>,
+
+    /// Process spawner for plugin command execution (local or remote)
+    process_spawner: Arc<dyn crate::services::remote::ProcessSpawner>,
+
     /// Whether file explorer is visible
     file_explorer_visible: bool,
 
@@ -1065,6 +1072,8 @@ impl Editor {
             file_explorer: None,
             fs_manager,
             filesystem,
+            local_filesystem: Arc::new(crate::model::filesystem::StdFileSystem),
+            process_spawner: Arc::new(crate::services::remote::LocalProcessSpawner),
             file_explorer_visible: false,
             file_explorer_sync_in_progress: false,
             file_explorer_width_percent: file_explorer_width,
@@ -1500,6 +1509,22 @@ impl Editor {
         self.status_log_path = Some(path);
     }
 
+    /// Set the process spawner for plugin command execution
+    /// Use RemoteProcessSpawner for remote editing, LocalProcessSpawner for local
+    pub fn set_process_spawner(
+        &mut self,
+        spawner: Arc<dyn crate::services::remote::ProcessSpawner>,
+    ) {
+        self.process_spawner = spawner;
+    }
+
+    /// Get remote connection info if editing remote files
+    ///
+    /// Returns `Some("user@host")` for remote editing, `None` for local.
+    pub fn remote_connection_info(&self) -> Option<&str> {
+        self.filesystem.remote_connection_info()
+    }
+
     /// Get the status log path
     pub fn get_status_log_path(&self) -> Option<&PathBuf> {
         self.status_log_path.as_ref()
@@ -1508,7 +1533,8 @@ impl Editor {
     /// Open the status log file (user clicked on status message)
     pub fn open_status_log(&mut self) {
         if let Some(path) = self.status_log_path.clone() {
-            if let Err(e) = self.open_file(&path) {
+            // Use open_local_file since log files are always local
+            if let Err(e) = self.open_local_file(&path) {
                 tracing::error!("Failed to open status log: {}", e);
             }
         } else {
@@ -1553,7 +1579,8 @@ impl Editor {
     /// Open the warning log file (user-initiated action)
     pub fn open_warning_log(&mut self) {
         if let Some(path) = self.warning_domains.general.log_path.clone() {
-            if let Err(e) = self.open_file(&path) {
+            // Use open_local_file since log files are always local
+            if let Err(e) = self.open_local_file(&path) {
                 tracing::error!("Failed to open warning log: {}", e);
             }
         }
@@ -4517,28 +4544,25 @@ impl Editor {
                 cwd,
                 callback_id,
             } => {
-                // Spawn process asynchronously via tokio
+                // Spawn process asynchronously using the process spawner
+                // (supports both local and remote execution)
                 if let (Some(runtime), Some(bridge)) = (&self.tokio_runtime, &self.async_bridge) {
-                    let effective_cwd = cwd.unwrap_or_else(|| {
+                    let effective_cwd = cwd.or_else(|| {
                         std::env::current_dir()
                             .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|_| ".".to_string())
+                            .ok()
                     });
                     let sender = bridge.sender();
-                    runtime.spawn(async move {
-                        let output = tokio::process::Command::new(&command)
-                            .args(&args)
-                            .current_dir(&effective_cwd)
-                            .output()
-                            .await;
+                    let spawner = self.process_spawner.clone();
 
-                        match output {
-                            Ok(output) => {
+                    runtime.spawn(async move {
+                        match spawner.spawn(command, args, effective_cwd).await {
+                            Ok(result) => {
                                 let _ = sender.send(AsyncMessage::PluginProcessOutput {
                                     process_id: callback_id.as_u64(),
-                                    stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                                    stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                                    exit_code: output.status.code().unwrap_or(-1),
+                                    stdout: result.stdout,
+                                    stderr: result.stderr,
+                                    exit_code: result.exit_code,
                                 });
                             }
                             Err(e) => {
@@ -4552,30 +4576,9 @@ impl Editor {
                         }
                     });
                 } else {
-                    // Fallback to blocking if no runtime available
-                    let effective_cwd = cwd.unwrap_or_else(|| ".".to_string());
-                    match std::process::Command::new(&command)
-                        .args(&args)
-                        .current_dir(&effective_cwd)
-                        .output()
-                    {
-                        Ok(output) => {
-                            // Using SpawnResult struct ensures field names match TypeScript types
-                            let result = fresh_core::api::SpawnResult {
-                                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                                exit_code: output.status.code().unwrap_or(-1),
-                            };
-                            self.plugin_manager.resolve_callback(
-                                callback_id,
-                                serde_json::to_string(&result).unwrap(),
-                            );
-                        }
-                        Err(e) => {
-                            self.plugin_manager
-                                .reject_callback(callback_id, e.to_string());
-                        }
-                    }
+                    // No async runtime - reject the callback
+                    self.plugin_manager
+                        .reject_callback(callback_id, "Async runtime not available".to_string());
                 }
             }
 

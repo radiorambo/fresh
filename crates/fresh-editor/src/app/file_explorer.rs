@@ -137,7 +137,19 @@ impl Editor {
     }
 
     pub(crate) fn init_file_explorer(&mut self) {
-        let root_path = self.working_dir.clone();
+        // Use remote home directory if in remote mode, otherwise local working directory
+        let root_path = if self.filesystem.remote_connection_info().is_some() {
+            match self.filesystem.home_dir() {
+                Ok(home) => home,
+                Err(e) => {
+                    tracing::error!("Failed to get remote home directory: {}", e);
+                    self.set_status_message(format!("Failed to get remote home: {}", e));
+                    return;
+                }
+            }
+        } else {
+            self.working_dir.clone()
+        };
 
         if let (Some(runtime), Some(bridge)) = (&self.tokio_runtime, &self.async_bridge) {
             let fs_manager = Arc::clone(&self.fs_manager);
@@ -493,15 +505,23 @@ impl Editor {
     }
 
     /// Perform the actual file explorer delete operation (called after prompt confirmation)
-    /// Moves the file/directory to the system trash/recycle bin
+    /// For local files: moves to system trash/recycle bin
+    /// For remote files: moves to ~/.local/share/fresh/trash/ on remote
     pub fn perform_file_explorer_delete(&mut self, path: std::path::PathBuf, _is_dir: bool) {
         let name = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        // Move to trash instead of permanent deletion
-        match trash::delete(&path) {
+        // For remote files, move to remote trash directory
+        // For local files, use system trash
+        let delete_result = if self.filesystem.remote_connection_info().is_some() {
+            self.move_to_remote_trash(&path)
+        } else {
+            trash::delete(&path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        };
+
+        match delete_result {
             Ok(_) => {
                 // Refresh the parent directory in the file explorer
                 if let Some(explorer) = &mut self.file_explorer {
@@ -544,6 +564,32 @@ impl Editor {
                 );
             }
         }
+    }
+
+    /// Move a file/directory to the remote trash directory (~/.local/share/fresh/trash/)
+    fn move_to_remote_trash(&self, path: &std::path::Path) -> std::io::Result<()> {
+        // Get remote home directory
+        let home = self.filesystem.home_dir()?;
+        let trash_dir = home.join(".local/share/fresh/trash");
+
+        // Create trash directory if it doesn't exist
+        if !self.filesystem.exists(&trash_dir) {
+            self.filesystem.create_dir_all(&trash_dir)?;
+        }
+
+        // Generate unique name with timestamp to avoid collisions
+        let file_name = path
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("unnamed"));
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let trash_name = format!("{}.{}", file_name.to_string_lossy(), timestamp);
+        let trash_path = trash_dir.join(trash_name);
+
+        // Move to trash
+        self.filesystem.rename(path, &trash_path)
     }
 
     pub fn file_explorer_rename(&mut self) {

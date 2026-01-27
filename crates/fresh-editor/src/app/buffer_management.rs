@@ -82,32 +82,42 @@ impl Editor {
     ///
     /// If the file doesn't exist, creates an unsaved buffer with that filename.
     pub fn open_file_no_focus(&mut self, path: &Path) -> anyhow::Result<BufferId> {
-        // Resolve relative paths against working_dir, not process current directory
+        // Resolve relative paths against appropriate base directory
+        // For remote mode, use the remote home directory; for local, use working_dir
+        let base_dir = if self.filesystem.remote_connection_info().is_some() {
+            self.filesystem
+                .home_dir()
+                .unwrap_or_else(|_| self.working_dir.clone())
+        } else {
+            self.working_dir.clone()
+        };
+
         let resolved_path = if path.is_relative() {
-            self.working_dir.join(path)
+            base_dir.join(path)
         } else {
             path.to_path_buf()
         };
 
         // Determine if we're opening a non-existent file (for creating new files)
-        let file_exists = resolved_path.exists();
+        // Use filesystem trait method to support remote files
+        let file_exists = self.filesystem.exists(&resolved_path);
 
         // Canonicalize the path to resolve symlinks and normalize path components
         // This ensures consistent path representation throughout the editor
         // For non-existent files, we need to canonicalize the parent directory and append the filename
         let canonical_path = if file_exists {
-            resolved_path
-                .canonicalize()
+            self.filesystem
+                .canonicalize(&resolved_path)
                 .unwrap_or_else(|_| resolved_path.clone())
         } else {
             // For non-existent files, canonicalize parent dir and append filename
             if let Some(parent) = resolved_path.parent() {
                 let canonical_parent = if parent.as_os_str().is_empty() {
-                    // No parent means just a filename, use working dir
-                    self.working_dir.clone()
+                    // No parent means just a filename, use base dir
+                    base_dir.clone()
                 } else {
-                    parent
-                        .canonicalize()
+                    self.filesystem
+                        .canonicalize(parent)
                         .unwrap_or_else(|_| parent.to_path_buf())
                 };
                 if let Some(filename) = resolved_path.file_name() {
@@ -123,7 +133,8 @@ impl Editor {
 
         // Check if the path is a directory (after following symlinks via canonicalize)
         // Directories cannot be opened as files in the editor
-        if path.is_dir() {
+        // Use filesystem trait method to support remote files
+        if self.filesystem.is_dir(path).unwrap_or(false) {
             anyhow::bail!(t!("buffer.cannot_open_directory"));
         }
 
@@ -266,6 +277,76 @@ impl Editor {
                 path: path.to_path_buf(),
             },
         );
+
+        Ok(buffer_id)
+    }
+
+    /// Open a local file (always uses local filesystem, not remote)
+    ///
+    /// This is used for opening local files like log files when in remote mode.
+    /// Unlike `open_file`, this always uses the local filesystem even when
+    /// the editor is connected to a remote server.
+    pub fn open_local_file(&mut self, path: &Path) -> anyhow::Result<BufferId> {
+        // Resolve relative paths against working_dir
+        let resolved_path = if path.is_relative() {
+            self.working_dir.join(path)
+        } else {
+            path.to_path_buf()
+        };
+
+        // Canonicalize the path
+        let canonical_path = resolved_path
+            .canonicalize()
+            .unwrap_or_else(|_| resolved_path.clone());
+        let path = canonical_path.as_path();
+
+        // Check if already open
+        let already_open = self
+            .buffers
+            .iter()
+            .find(|(_, state)| state.buffer.file_path() == Some(path))
+            .map(|(id, _)| *id);
+
+        if let Some(id) = already_open {
+            self.set_active_buffer(id);
+            return Ok(id);
+        }
+
+        // Create new buffer
+        let buffer_id = BufferId(self.next_buffer_id);
+        self.next_buffer_id += 1;
+
+        // Create editor state using LOCAL filesystem
+        let state = EditorState::from_file_with_languages(
+            path,
+            self.terminal_width,
+            self.terminal_height,
+            self.config.editor.large_file_threshold_bytes as usize,
+            &self.grammar_registry,
+            &self.config.languages,
+            Arc::clone(&self.local_filesystem),
+        )?;
+
+        self.buffers.insert(buffer_id, state);
+        self.event_logs
+            .insert(buffer_id, crate::model::event::EventLog::new());
+
+        // Create metadata
+        let metadata =
+            super::types::BufferMetadata::with_file(path.to_path_buf(), &self.working_dir);
+        self.buffer_metadata.insert(buffer_id, metadata);
+
+        // Add to active split's tabs
+        let active_split = self.split_manager.active_split();
+        if let Some(view_state) = self.split_view_states.get_mut(&active_split) {
+            view_state.add_buffer(buffer_id);
+            view_state.viewport.line_wrap_enabled = self.config.editor.line_wrap;
+        }
+
+        self.set_active_buffer(buffer_id);
+
+        let display_name = path.display().to_string();
+        self.status_message = Some(t!("buffer.opened", name = display_name).to_string());
 
         Ok(buffer_id)
     }
